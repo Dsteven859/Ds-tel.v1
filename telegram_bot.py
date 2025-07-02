@@ -2966,7 +2966,13 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Función principal
 def main():
     """Función principal del bot"""
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Usar ApplicationBuilder con configuración explícita
+    application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .concurrent_updates(True)
+        .build()
+    )
 
     # Registrar comandos principales
     application.add_handler(CommandHandler("start", start))
@@ -3014,9 +3020,14 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
-    # Importar e iniciar keep_alive para UptimeRobot
-    from keep_alive import keep_alive
-    keep_alive()
+    try:
+        # Importar e iniciar keep_alive para UptimeRobot
+        from keep_alive import keep_alive
+        keep_alive()
 
-    # Iniciar el bot
-    main()
+        # Iniciar el bot
+        main()
+    except Exception as e:
+        logger.error(f"Error crítico al iniciar el bot: {e}")
+        import sys
+        sys.exit(1)
