@@ -1,4 +1,5 @@
 
+<old_str>
 #!/usr/bin/env python3
 """
 Punto de entrada principal para CC Checker Ultra Pro Bot
@@ -75,3 +76,44 @@ def main():
 
 if __name__ == "__main__":
     main()
+</old_str>
+<new_str>
+#!/usr/bin/env python3
+"""
+Punto de entrada principal para CC Checker Ultra Pro Bot
+"""
+
+import os
+import sys
+import logging
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+def main():
+    """Función principal"""
+    logger.info("🚀 Iniciando CC Checker Ultra Pro Bot...")
+    
+    # Verificar variables de entorno requeridas
+    if not os.getenv('BOT_TOKEN'):
+        logger.error("❌ BOT_TOKEN no configurado en variables de entorno")
+        sys.exit(1)
+    
+    try:
+        # Importar y ejecutar el bot principal
+        from telegram_bot import main as run_bot
+        run_bot()
+        
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot detenido por usuario")
+    except Exception as e:
+        logger.error(f"❌ Error crítico: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+</new_str>
