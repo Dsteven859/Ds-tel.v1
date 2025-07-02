@@ -67,8 +67,8 @@ def main():
         logger.info("✅ Servidor Flask iniciado correctamente")
 
         # Importar y ejecutar el bot principal
-        from telegram_bot import main as run_bot
-        run_bot()
+        import telegram_bot
+        telegram_bot.main()
 
     except KeyboardInterrupt:
         logger.info("🛑 Bot detenido por usuario")
