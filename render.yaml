@@ -6,8 +6,6 @@ services:
     buildCommand: pip install -r requirements_bot.txt
     startCommand: python main.py
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_IDS
@@ -16,7 +14,5 @@ services:
         sync: false
       - key: COFOUNDER_IDS
         sync: false
-    healthCheckPath: /
-    autoDeploy: true
-    region: oregon
-    plan: free
+      - key: PORT
+        value: 5000
