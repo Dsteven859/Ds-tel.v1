@@ -1,5 +1,4 @@
 
-<old_str>
 #!/usr/bin/env python3
 """
 Punto de entrada principal para CC Checker Ultra Pro Bot
@@ -46,7 +45,7 @@ def bot_status():
 
 def run_flask():
     """Ejecutar servidor Flask en hilo separado"""
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
 
 def main():
@@ -62,7 +61,7 @@ def main():
         # Iniciar servidor Flask en hilo separado para health checks
         flask_thread = threading.Thread(target=run_flask, daemon=True)
         flask_thread.start()
-        logger.info(f"✅ Servidor Flask iniciado en puerto {os.environ.get('PORT', 5000)}")
+        logger.info(f"✅ Servidor Flask iniciado en puerto {os.environ.get('PORT', 10000)}")
         
         # Importar y ejecutar el bot principal
         from telegram_bot import main as run_bot
@@ -76,44 +75,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-</old_str>
-<new_str>
-#!/usr/bin/env python3
-"""
-Punto de entrada principal para CC Checker Ultra Pro Bot
-"""
-
-import os
-import sys
-import logging
-
-# Configurar logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-def main():
-    """Función principal"""
-    logger.info("🚀 Iniciando CC Checker Ultra Pro Bot...")
-    
-    # Verificar variables de entorno requeridas
-    if not os.getenv('BOT_TOKEN'):
-        logger.error("❌ BOT_TOKEN no configurado en variables de entorno")
-        sys.exit(1)
-    
-    try:
-        # Importar y ejecutar el bot principal
-        from telegram_bot import main as run_bot
-        run_bot()
-        
-    except KeyboardInterrupt:
-        logger.info("🛑 Bot detenido por usuario")
-    except Exception as e:
-        logger.error(f"❌ Error crítico: {e}")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-</new_str>
