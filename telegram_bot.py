@@ -481,6 +481,8 @@ class Database:
     def __init__(self):
         self.users = {}
         self.staff_roles = {}  # Sistema de roles de staff
+        self.bot_maintenance = False  # Estado de mantenimiento
+        self.maintenance_message = ""  # Mensaje de mantenimiento
         self.load_data()
 
     def load_data(self):
@@ -490,9 +492,13 @@ class Database:
                     data = json.load(f)
                     self.users = data.get('users', {})
                     self.staff_roles = data.get('staff_roles', {})
+                    self.bot_maintenance = data.get('bot_maintenance', False)
+                    self.maintenance_message = data.get('maintenance_message', "")
         except:
             self.users = {}
             self.staff_roles = {}
+            self.bot_maintenance = False
+            self.maintenance_message = ""
 
     def save_data(self):
         try:
@@ -500,12 +506,24 @@ class Database:
                 json.dump(
                     {
                         'users': self.users,
-                        'staff_roles': self.staff_roles
+                        'staff_roles': self.staff_roles,
+                        'bot_maintenance': self.bot_maintenance,
+                        'maintenance_message': self.maintenance_message
                     },
                     f,
                     indent=2)
         except Exception as e:
             logger.error(f"Error guardando datos: {e}")
+
+    def set_maintenance(self, status: bool, message: str = ""):
+        """Activar/desactivar modo mantenimiento"""
+        self.bot_maintenance = status
+        self.maintenance_message = message
+        self.save_data()
+
+    def is_maintenance(self):
+        """Verificar si el bot está en mantenimiento"""
+        return self.bot_maintenance
 
     def get_user(self, user_id: str):
         if user_id not in self.users:
@@ -822,6 +840,25 @@ class AddressGenerator:
         }
 
 
+# Decorador para verificar que el comando se use solo en grupos
+def group_only(func):
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # Verificar si es un chat grupal
+        if update.effective_chat.type in ['private']:
+            # Es un chat privado, enviar mensaje de error
+            await update.message.reply_text(
+                "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
+                "❌ **No tienes privilegios para verificar tarjetas en chat privado**\n\n"
+                "🔹 **Este comando solo funciona en grupos**\n"
+                "🔹 **Únete al grupo oficial del bot**\n"
+                "🔹 **Contacta a los administradores para más información**\n\n"
+                "💡 **Tip:** Usa el bot desde el grupo oficial",
+                parse_mode=ParseMode.MARKDOWN)
+            return
+        
+        return await func(update, context)
+    return wrapper
+
 # Decorador para verificar créditos (solo para live)
 def require_credits_for_live(credits_needed: int = 3):
 
@@ -868,6 +905,26 @@ def admin_only(func):
 
     return wrapper
 
+
+# Decorador para verificar mantenimiento
+def check_maintenance(func):
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # Los admins pueden usar comandos durante mantenimiento
+        if update.effective_user.id in ADMIN_IDS:
+            return await func(update, context)
+        
+        # Si está en mantenimiento, bloquear comando
+        if db.is_maintenance():
+            maintenance_msg = db.maintenance_message or "🔧 Bot en mantenimiento. Intenta más tarde."
+            await update.message.reply_text(
+                f"🚧 **BOT EN MANTENIMIENTO** 🚧\n\n"
+                f"⚠️ {maintenance_msg}\n\n"
+                f"💡 Contacta a los administradores para más información",
+                parse_mode=ParseMode.MARKDOWN)
+            return
+        
+        return await func(update, context)
+    return wrapper
 
 # Decorador para verificar roles de staff
 def staff_only(required_level=1):
@@ -952,6 +1009,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome_text)
 
 
+@check_maintenance
 async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Generar tarjetas basadas en BIN"""
     user_id = str(update.effective_user.id)
@@ -1103,6 +1161,8 @@ async def credits_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
+@check_maintenance
+@group_only
 @require_credits_for_live(3)
 async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Verificar tarjetas en vivo - Cuesta 3 créditos"""
@@ -1149,13 +1209,6 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cards_list = cards_list[:10]
     total_cards = len(cards_list)
 
-    # Mensaje inicial mejorado
-    progress_msg = await update.message.reply_text(
-        "⊚ **VERIFICANDO TARJETAS** ⊚\n\n"
-        f"📊 Progreso: [░░░░░░░░░░] 0%\n"
-        f"💳 Tarjeta 0/{total_cards}\n"
-        f"{methods_text}...")
-
     # APIs disponibles según tipo de usuario
     all_api_methods = [
         ("Stripe", check_stripe_ultra_pro),
@@ -1175,6 +1228,13 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         api_methods = all_api_methods[:5]  # Solo 5 métodos para usuarios estándar
         methods_text = f"⚡ Usando {len(api_methods)} APIs simultáneas (métodos estándar)"
+
+    # Mensaje inicial mejorado
+    progress_msg = await update.message.reply_text(
+        "⊚ **VERIFICANDO TARJETAS** ⊚\n\n"
+        f"📊 Progreso: [░░░░░░░░░░] 0%\n"
+        f"💳 Tarjeta 0/{total_cards}\n"
+        f"{methods_text}...")
 
     results = []
 
@@ -1293,6 +1353,7 @@ async def direccion_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
+@check_maintenance
 async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Extrapolación avanzada de tarjetas - Solo admins y premium"""
     user_id = str(update.effective_user.id)
@@ -2264,20 +2325,32 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver información detallada de usuario por ID - Solo admins"""
     args = context.args
-    if not args:
+    
+    # Si se responde a un mensaje, obtener el ID del usuario
+    if update.message.reply_to_message and not args:
+        target_user_id = str(update.message.reply_to_message.from_user.id)
+        target_user = update.message.reply_to_message.from_user
+    elif args:
+        target_user_id = args[0]
+        try:
+            # Intentar obtener información del usuario
+            chat_member = await context.bot.get_chat_member(update.effective_chat.id, int(target_user_id))
+            target_user = chat_member.user
+        except:
+            target_user = None
+    else:
         await update.message.reply_text(
             "🔍 **INFORMACIÓN DE USUARIO** 🔍\n\n"
-            "**Uso:** `/id [user_id]`\n"
+            "**Uso:** `/id [user_id]` o responder a un mensaje\n"
             "**Ejemplo:** `/id 123456789`\n\n"
             "📋 **Información disponible:**\n"
-            "• Tiempo en el servidor\n"
+            "• Datos del usuario\n"
             "• Actividad y estadísticas\n"
             "• Estado de cuenta\n"
             "• Historial de advertencias",
             parse_mode=ParseMode.MARKDOWN)
         return
 
-    target_user_id = args[0]
     user_data = db.get_user(target_user_id)
 
     # Calcular tiempo en servidor
@@ -2285,31 +2358,42 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     time_in_server = datetime.now() - join_date
     days_in_server = time_in_server.days
 
-    # Calcular actividad
-    total_activity = user_data['total_generated'] + user_data['total_checked']
-    activity_level = "🔥 Muy Alto" if total_activity > 100 else "⚡ Alto" if total_activity > 50 else "📊 Medio" if total_activity > 20 else "📉 Bajo"
+    # Obtener información del usuario
+    if target_user:
+        username = f"@{target_user.username}" if target_user.username else "Sin username"
+        first_name = target_user.first_name or "Sin nombre"
+        last_name = target_user.last_name or ""
+        full_name = f"{first_name} {last_name}".strip()
+    else:
+        username = "Desconocido"
+        full_name = "Usuario no encontrado"
 
-    response = f"🔍 **INFORMACIÓN DETALLADA** 🔍\n\n"
-    response += f"👤 **ID:** `{target_user_id}`\n"
-    response += f"📅 **En servidor:** {days_in_server} días\n"
-    response += f"📊 **Nivel actividad:** {activity_level}\n"
-    response += f"💰 **Créditos:** {user_data['credits']}\n"
-    response += f"🏭 **Tarjetas generadas:** {user_data['total_generated']}\n"
-    response += f"🔍 **Tarjetas verificadas:** {user_data['total_checked']}\n"
-    response += f"⚠️ **Advertencias:** {user_data.get('warns', 0)}/3\n"
-
+    # Estado premium
+    premium_status = "❌"
     if user_data.get('premium', False):
         premium_until = datetime.fromisoformat(user_data['premium_until'])
         days_left = (premium_until - datetime.now()).days
-        response += f"👑 **Premium:** {days_left} días restantes\n"
-    else:
-        response += f"🆓 **Cuenta:** Estándar\n"
+        premium_status = f"✅ ({days_left}d)"
 
     # Estado de riesgo
     warns = user_data.get('warns', 0)
-    risk_level = "🔴 Alto riesgo" if warns >= 2 else "🟡 Riesgo medio" if warns >= 1 else "🟢 Sin riesgo"
-    response += f"🛡️ **Nivel de riesgo:** {risk_level}\n\n"
-    response += f"💡 **Acciones disponibles:** `/ban`, `/warn`, `/premium`"
+    risk_emoji = "🔴" if warns >= 2 else "🟡" if warns >= 1 else "🟢"
+
+    response = f"╭─────────────────────────────╮\n"
+    response += f"│    🔍 **INFORMACIÓN DE USUARIO**   │\n"
+    response += f"╰─────────────────────────────╯\n\n"
+    response += f"👤 **Nombre/Username:** {full_name}\n"
+    response += f"🆔 **ID:** `{target_user_id}`\n"
+    response += f"📱 **Username:** {username}\n"
+    response += f"📅 **En el servidor:** {days_in_server} días\n\n"
+    response += f"💰 **Créditos:** {user_data['credits']:,}\n"
+    response += f"🏭 **Tarjetas generadas:** {user_data['total_generated']:,}\n"
+    response += f"🔍 **Tarjetas verificadas:** {user_data['total_checked']:,}\n"
+    response += f"👑 **Premium:** {premium_status}\n"
+    response += f"⚠️ **Advertencias:** {warns}/3 {risk_emoji}\n\n"
+    response += f"📊 **Actividad total:** {user_data['total_generated'] + user_data['total_checked']:,}\n"
+    response += f"⏰ **Último bono:** {user_data.get('last_bonus', 'Nunca')[:10] if user_data.get('last_bonus') else 'Nunca'}\n\n"
+    response += f"🛠️ **Acciones:** `/ban` `/warn` `/premium` `/unwarn`"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -2543,6 +2627,48 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• ID de usuario inválido\n"
             f"• El bot no tiene permisos suficientes",
             parse_mode=ParseMode.MARKDOWN)
+
+
+@admin_only
+async def close_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cerrar bot para mantenimiento - Solo admins"""
+    args = context.args
+    maintenance_message = ' '.join(args) if args else "El bot está en mantenimiento. Volveremos pronto."
+    
+    db.set_maintenance(True, maintenance_message)
+    
+    response = f"🔒 **BOT CERRADO PARA MANTENIMIENTO** 🔒\n\n"
+    response += f"🚧 **Estado:** Mantenimiento activado\n"
+    response += f"💬 **Mensaje:** {maintenance_message}\n"
+    response += f"👮‍♂️ **Por:** {update.effective_user.first_name}\n"
+    response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+    response += f"⚠️ **Los usuarios no podrán usar comandos hasta que uses `/open`**\n"
+    response += f"✅ **Los administradores pueden seguir usando todos los comandos**"
+    
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
+@admin_only
+async def open_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Abrir bot después de mantenimiento - Solo admins"""
+    if not db.is_maintenance():
+        await update.message.reply_text(
+            "✅ **EL BOT YA ESTÁ ABIERTO** ✅\n\n"
+            "💡 El bot no está en modo mantenimiento\n"
+            "🔄 Todos los comandos están funcionando normalmente",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+    
+    db.set_maintenance(False, "")
+    
+    response = f"🔓 **BOT ABIERTO Y OPERATIVO** 🔓\n\n"
+    response += f"✅ **Estado:** Bot totalmente funcional\n"
+    response += f"🔄 **Todos los comandos están disponibles**\n"
+    response += f"👮‍♂️ **Abierto por:** {update.effective_user.first_name}\n"
+    response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+    response += f"🎉 **¡Los usuarios ya pueden usar el bot normalmente!**"
+    
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
 # Callback Query Handler
@@ -3071,6 +3197,8 @@ def main():
     application.add_handler(CommandHandler("unwarn", unwarn_command))
     application.add_handler(CommandHandler("unban", unban_command))
     application.add_handler(CommandHandler("stats", stats_command))
+    application.add_handler(CommandHandler("open", open_command))
+    application.add_handler(CommandHandler("close", close_command))
 
     # Callback handlers
     application.add_handler(CallbackQueryHandler(button_callback))
