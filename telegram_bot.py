@@ -964,8 +964,6 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⋆⁺₊⋆『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』⋆⁺₊⋆\n"
             "CC Generator ♻️\n\n"
             "**Formatos soportados:**\n"
-            "• `/gen 557910|12|2025|123`\n"
-            "• `/gen 493158211457xxxx|11|2028|`\n"
             "• `/gen 55791004431xxxxxx/08/27`\n"
             "• `/gen 557910 20` (cantidad)\n",
             parse_mode=ParseMode.MARKDOWN)
@@ -1120,7 +1118,6 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response += "📑 **Formato:** `4532xxxxxxxx1234|12|2025|123`\n\n"
         response += "🔰 **Capacidad:** Hasta 10 tarjetas por comando\n"
         response += "💰 **Costo:** 3 créditos por verificación\n"
-        response += "⚡ **APIs:** 6 métodos simultáneos\n"
 
         await update.message.reply_text(response,
                                         parse_mode=ParseMode.MARKDOWN)
@@ -1188,7 +1185,7 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         try:
             await progress_msg.edit_text(
-                f"⊚ **VERIFICANDO TARJETAS** ⊚\n\n"
+                f"⊚ **CHERNOBIL ESTA VERIFICANDO TARJETAS..** ⊚\n\n"
                 f"📊 Progreso: [{progress_bar}] {progress:.0f}%\n"
                 f"💳 Tarjeta {card_index + 1}/{total_cards}\n"
                 f"{methods_text}...",
@@ -1319,7 +1316,6 @@ async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• ✅ Mayor efectividad (75-85%)\n"
             "• ✅ Reconoce múltiples formatos\n"
             "• ✅ Créditos adicionales\n\n"
-            "🔑 **Activar premium:** `/apply_key [código]`\n"
             "💰 **Consultar precios:** Contacta un admin",
             parse_mode=ParseMode.MARKDOWN)
         return
@@ -1586,7 +1582,7 @@ async def pasarela_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not args:
         response = f"🔍 **DETECTOR DE PASARELAS** 🔍\n\n"
         response += f"**Uso:** `/pasarela [URL]`\n"
-        response += f"**Ejemplo:** `/pasarela https://www.venus.com`\n\n"
+        response += f"**Ejemplo:** `/pasarela"
         response += f"🎯 **Funciones:**\n"
         response += f"• Detecta automáticamente las pasarelas\n"
         response += f"• Clasifica por importancia\n"
@@ -1679,19 +1675,19 @@ async def apply_key_command(update: Update,
 
     # Claves válidas simuladas
     VALID_KEYS = {
-        'ULTRA': {
+        'ULTRA30': {
             'days': 30,
             'used': False
         },
-        'PREMIUM4': {
+        'PREMIUM460': {
             'days': 60,
             'used': False
         },
-        'VIP': {
+        'VIP90': {
             'days': 90,
             'used': False
         },
-        'ChernobilChLv_': {
+        'ChernobilChLv_365': {
             'days': 365,
             'used': False
         }
@@ -1723,7 +1719,7 @@ async def apply_key_command(update: Update,
     response += f"👑 **Premium activado por {days} días**\n"
     response += f"💎 **+300 créditos bonus**\n"
     response += f"⚡ **Beneficios premium desbloqueados:**\n\n"
-    response += f"• Verificación completa 4 métodos\n"
+    response += f"• Verificación completa 6 métodos\n"
     response += f"• Límites aumentados\n"
     response += f"• Bono diario premium\n"
     response += f"• Soporte prioritario\n"
@@ -1792,7 +1788,6 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "✨ **Beneficios de donar:**\n"
             "• Ayudas a otros usuarios del bot\n"
             "• Contribuyes al crecimiento de la comunidad\n"
-            "• Demuestras tu generosidad\n\n"
             "💰 **Tus créditos actuales:** {}\n"
             "🔄 **Donaciones ilimitadas disponibles**".format(
                 user_data['credits'] if not is_admin else '∞ (Admin)'),
@@ -2114,13 +2109,10 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🧹 **SISTEMA DE LIMPIEZA AVANZADO** 🧹\n\n"
             "**Uso:** `/clean [número]`\n"
-            "**Ejemplo:** `/clean 50`\n\n"
             "📋 **Características:**\n"
             "• Elimina mensajes de forma inteligente\n"
             "• Registro detallado de actividad\n"
-            "• Límite de seguridad: 100 mensajes\n"
-            "• Compatible con chats grupales\n\n"
-            "⚠️ **Nota:** El bot debe tener permisos de administrador",
+            "• Límite de seguridad: 100 mensajes\n",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -2377,7 +2369,7 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "❌ **LÍMITE ALCANZADO** ❌\n\n"
                 "🛡️ **Moderadores pueden dar máximo 2 warns**\n"
                 "📊 **Warns dados:** 2/2\n\n"
-                "💡 Contacta a un Co-Fundador o Fundador para más warns",
+                "💡 Contacta a un Co-Fundador o Fundador",
                 parse_mode=ParseMode.MARKDOWN)
             return
 
@@ -2585,7 +2577,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == 'premium_benefits':
         text = "👑 **BENEFICIOS PREMIUM** 👑\n\n"
         text += "⚡ **Verificación:**\n"
-        text += "• 4 métodos de verificación simultáneos\n"
+        text += "• 8 métodos de verificación simultáneos\n"
         text += "• Mayor probabilidad de LIVE\n"
         text += "• Resultados más rápidos\n\n"
         text += "🎯 **Límites:**\n"
@@ -2593,7 +2585,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += "• Direcciones adicionales\n\n"
         text += "💎 **Bonos:**\n"
         text += "• 15 créditos diarios (vs 10)\n"
-        text += "• +100 créditos al activar premium"
+        text += "• +300 créditos al activar premium"
 
         keyboard = [[
             InlineKeyboardButton("🔙 Regresar",
@@ -2956,8 +2948,6 @@ async def welcome_new_member(update: Update,
         welcome_text += f"💡 **Para empezar:**\n"
         welcome_text += f"• Usa `/start` para ver todos los comandos\n"
         welcome_text += f"• Obtén créditos gratis con `/bonus`\n"
-        welcome_text += f"• Genera tarjetas con `/gen`\n"
-        welcome_text += f"• Verifica CCs con `/live`\n\n"
         welcome_text += f"🎁 **Recibes 10 créditos de bienvenida**\n\n"
         welcome_text += f"📋 **Reglas básicas:**\n"
         welcome_text += f"• No spam ni enlaces\n"
