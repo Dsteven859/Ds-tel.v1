@@ -963,35 +963,60 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "⋆⁺₊⋆『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』⋆⁺₊⋆\n"
             "CC Generator ♻️\n\n"
-            "Format: /gen bin|m|y|cvv\n"
-            "Example: /gen 557910|12|2025|123\n",
+            "**Formatos soportados:**\n"
+            "• `/gen 557910|12|2025|123`\n"
+            "• `/gen 493158211457xxxx|11|2028|`\n"
+            "• `/gen 55791004431xxxxxx/08/27`\n"
+            "• `/gen 557910 20` (cantidad)\n",
             parse_mode=ParseMode.MARKDOWN)
         return
 
-    # Manejar formato alternativo con slash (55791004431xxxxxx/08/27)
-    if '/' in args[0]:
-        parts = args[0].split('/')
+    input_data = args[0]
+    preset_month = None
+    preset_year = None
+    preset_cvv = None
+    bin_number = ""
+
+    # Manejar formato con | (pipe)
+    if '|' in input_data:
+        parts = input_data.split('|')
+        if len(parts) >= 1:
+            # Extraer BIN del primer campo, removiendo x's
+            raw_bin = parts[0].replace('x', '').replace('X', '')
+            # Tomar solo los primeros 6-8 dígitos como BIN
+            bin_number = ''.join([c for c in raw_bin if c.isdigit()])[:8]
+            
+            preset_month = parts[1] if len(parts) > 1 and parts[1].isdigit() else None
+            preset_year = parts[2] if len(parts) > 2 and parts[2].isdigit() else None
+            preset_cvv = parts[3] if len(parts) > 3 and parts[3].isdigit() else None
+    
+    # Manejar formato con slash (55791004431xxxxxx/08/27)
+    elif '/' in input_data:
+        parts = input_data.split('/')
         if len(parts) >= 3:
-            bin_number = parts[0].replace(
-                'x', '')[:6]  # Extraer solo los primeros 6 dígitos
+            raw_bin = parts[0].replace('x', '').replace('X', '')
+            bin_number = ''.join([c for c in raw_bin if c.isdigit()])[:8]
             preset_month = parts[1] if parts[1].isdigit() else None
             preset_year = f"20{parts[2]}" if len(parts[2]) == 2 else parts[2]
-            preset_cvv = args[1] if len(
-                args) > 1 and args[1].isdigit() else None
+            preset_cvv = args[1] if len(args) > 1 and args[1].isdigit() else None
         else:
             await update.message.reply_text(
                 "❌ Formato incorrecto. Usa: 55791004431xxxxxx/08/27")
             return
     else:
-        bin_number = args[0]
-        preset_month = args[2] if len(args) > 2 else None
-        preset_year = args[3] if len(args) > 3 else None
-        preset_cvv = args[4] if len(args) > 4 else None
+        # Formato simple: solo BIN
+        bin_number = ''.join([c for c in input_data if c.isdigit()])
 
-    # Validar BIN
-    if not bin_number.isdigit() or len(bin_number) < 4:
+    # Validar BIN extraído
+    if not bin_number or len(bin_number) < 6:
         await update.message.reply_text(
-            "❌ BIN inválido. Debe tener al menos 4 dígitos")
+            "❌ **BIN inválido**\n\n"
+            "💡 **Formatos aceptados:**\n"
+            "• `557910|12|2025|123`\n"
+            "• `493158211457xxxx|11|2028|`\n"
+            "• `55791004431xxxxxx/08/27`\n"
+            "• `557910` (solo BIN)",
+            parse_mode=ParseMode.MARKDOWN)
         return
 
     # Cantidad de tarjetas
@@ -1132,17 +1157,27 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⊚ **VERIFICANDO TARJETAS** ⊚\n\n"
         f"📊 Progreso: [░░░░░░░░░░] 0%\n"
         f"💳 Tarjeta 0/{total_cards}\n"
-        f"⚡ Usando 6 APIs simultáneas...")
+        f"{methods_text}...")
 
-    # APIs con mejores nombres
-    api_methods = [
+    # APIs disponibles según tipo de usuario
+    all_api_methods = [
         ("Stripe", check_stripe_ultra_pro),
         ("PayPal", check_paypal_ultra_pro), 
         ("Braintree", check_braintree_ultra_pro),
         ("Authorize.net", check_authorize_ultra_pro),
         ("Square", check_square_ultra_pro),
-        ("Adyen", check_adyen_ultra_pro)
+        ("Adyen", check_adyen_ultra_pro),
+        ("Worldpay", check_worldpay_ultra_pro),
+        ("CyberSource", check_cybersource_ultra_pro)
     ]
+    
+    # Determinar métodos disponibles según tipo de usuario
+    if is_admin or user_data.get('premium', False):
+        api_methods = all_api_methods  # Todos los métodos
+        methods_text = f"⚡ Usando {len(api_methods)} APIs simultáneas (TODOS los métodos)"
+    else:
+        api_methods = all_api_methods[:5]  # Solo 5 métodos para usuarios estándar
+        methods_text = f"⚡ Usando {len(api_methods)} APIs simultáneas (métodos estándar)"
 
     results = []
 
@@ -1156,7 +1191,7 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"⊚ **VERIFICANDO TARJETAS** ⊚\n\n"
                 f"📊 Progreso: [{progress_bar}] {progress:.0f}%\n"
                 f"💳 Tarjeta {card_index + 1}/{total_cards}\n"
-                f"⚡ Usando 6 APIs simultáneas...",
+                f"{methods_text}...",
                 parse_mode=ParseMode.MARKDOWN)
         except:
             pass
@@ -1261,7 +1296,6 @@ async def direccion_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
-@require_credits_for_live(5)
 async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Extrapolación avanzada de tarjetas - Solo admins y premium"""
     user_id = str(update.effective_user.id)
@@ -1274,17 +1308,35 @@ async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "╔═════════════════════════════╗\n"
             "║  🔒 **ACCESO RESTRINGIDO** 🔒  ║\n"
             "╚═════════════════════════════╝\n\n"
-            "👑 **Este comando es exclusivo para:**\n"
-            "• Administradores del bot\n"
-            "• Usuarios con membresía premium\n\n"
+            "👑 **Este comando es EXCLUSIVO para:**\n"
+            "• 🛡️ Administradores del bot\n"
+            "• 💎 Usuarios con membresía PREMIUM\n\n"
+            "🚫 **Tu cuenta:** Usuario estándar\n"
+            "💡 **Para acceder necesitas:**\n\n"
             "💎 **Beneficios premium:**\n"
-            "• Extrapolación avanzada ilimitada\n"
-            "• Algoritmos de IA únicos\n"
-            "• Mayor efectividad (75-85%)\n"
-            "• Reconoce múltiples formatos\n\n"
-            "🔑 **Activar premium:** `/apply_key [código]`",
+            "• ✅ Extrapolación avanzada ilimitada\n"
+            "• ✅ Algoritmos de IA únicos\n"
+            "• ✅ Mayor efectividad (75-85%)\n"
+            "• ✅ Reconoce múltiples formatos\n"
+            "• ✅ Créditos adicionales\n\n"
+            "🔑 **Activar premium:** `/apply_key [código]`\n"
+            "💰 **Consultar precios:** Contacta un admin",
             parse_mode=ParseMode.MARKDOWN)
         return
+
+    # Verificar créditos solo si no es admin
+    if not is_admin:
+        if user_data['credits'] < 5:
+            await update.message.reply_text(
+                f"❌ **Créditos insuficientes**\n\n"
+                f"Necesitas: 5 créditos\n"
+                f"Tienes: {user_data['credits']} créditos\n\n"
+                f"Usa /bonus para créditos gratis o /infocredits para más información",
+                parse_mode=ParseMode.MARKDOWN)
+            return
+        
+        # Descontar créditos
+        db.update_user(user_id, {'credits': user_data['credits'] - 5})
 
     args = context.args
     if not args:
@@ -2127,25 +2179,26 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Eliminar el mensaje de progreso
         try:
             await progress_msg.delete()
-        except:
+     �   except:
             pass
 
-        # Información detallada de la limpieza
-        cleanup_info = "╔═══════════════════════════════╗\n"
-        cleanup_info += "║    🧹 **LIMPIEZA COMPLETADA** 🧹    ║\n"
-        cleanup_info += "╚═══════════════════════════════╝\n\n"
-        cleanup_info += f"🗑️ **Mensajes eliminados:** {deleted_count}/{count}\n"
-        cleanup_info += f"📊 **Efectividad:** {(deleted_count/count)*100:.1f}%\n"
-        cleanup_info += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}\n"
-        cleanup_info += f"👤 **Ejecutado por:** {admin_info.first_name}\n"
-        cleanup_info += f"🆔 **Admin ID:** `{admin_info.id}`\n"
-        cleanup_info += f"👮‍♂️ **Username:** @{admin_info.username or 'Sin username'}\n"
-        cleanup_info += f"💬 **Chat ID:** `{chat_id}`\n\n"
-        cleanup_info += f"✅ **Estado:** Completado exitosamente\n"
-        cleanup_info += f"📝 **Registro:** Guardado en logs del sistema"
+        # Información detallada de la limpieza (TEMPORAL)
+        cleanup_info_temp = "╔═══════════════════════════════╗\n"
+        cleanup_info_temp += "║    🧹 **LIMPIEZA COMPLETADA** 🧹    ║\n"
+        cleanup_info_temp += "╚═══════════════════════════════╝\n\n"
+        cleanup_info_temp += f"🗑️ **Mensajes eliminados:** {deleted_count}/{count}\n"
+        cleanup_info_temp += f"📊 **Efectividad:** {(deleted_count/count)*100:.1f}%\n"
+        cleanup_info_temp += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}\n"
+        cleanup_info_temp += f"👤 **Ejecutado por:** {admin_info.first_name}\n"
+        cleanup_info_temp += f"🆔 **Admin ID:** `{admin_info.id}`\n"
+        cleanup_info_temp += f"👮‍♂️ **Username:** @{admin_info.username or 'Sin username'}\n"
+        cleanup_info_temp += f"💬 **Chat ID:** `{chat_id}`\n\n"
+        cleanup_info_temp += f"✅ **Estado:** Completado exitosamente\n"
+        cleanup_info_temp += f"📝 **Registro:** Guardado en logs del sistema\n\n"
+        cleanup_info_temp += f"⚠️ **Este mensaje se eliminará en 30 segundos**"
 
-        # Enviar confirmación que se auto-elimina después de 30 segundos
-        confirmation_msg = await context.bot.send_message(chat_id, cleanup_info, parse_mode=ParseMode.MARKDOWN)
+        # Enviar confirmación temporal
+        confirmation_msg = await context.bot.send_message(chat_id, cleanup_info_temp, parse_mode=ParseMode.MARKDOWN)
 
         # Auto-eliminar confirmación después de 30 segundos
         await asyncio.sleep(30)
@@ -2153,6 +2206,20 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await confirmation_msg.delete()
         except:
             pass
+        
+        # Mensaje de seguridad PERMANENTE
+        security_info = "🔐 **REGISTRO DE SEGURIDAD** 🔐\n\n"
+        security_info += f"📅 **Fecha/Hora:** {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}\n"
+        security_info += f"🧹 **Acción:** Limpieza de mensajes\n"
+        security_info += f"🗑️ **Cantidad:** {deleted_count}/{count} mensajes eliminados\n"
+        security_info += f"👤 **Administrador:** {admin_info.first_name} ({admin_info.username or 'Sin username'})\n"
+        security_info += f"🆔 **Admin ID:** `{admin_info.id}`\n"
+        security_info += f"💬 **Chat ID:** `{chat_id}`\n\n"
+        security_info += f"🛡️ **Motivo:** Mantenimiento y seguridad del servidor\n"
+        security_info += f"📝 **Este registro permanece por temas de seguridad**"
+
+        # Enviar registro permanente de seguridad
+        await context.bot.send_message(chat_id, security_info, parse_mode=ParseMode.MARKDOWN)
 
         # Log para administradores
         logger.info(f"Limpieza ejecutada - Admin: {admin_info.id} ({admin_info.first_name}) - "
@@ -2304,7 +2371,7 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if staff_data and staff_data['role'] == '3' and not is_admin:
         # Es moderador, verificar límite de warns
-        mod_warns = staff_data.get('warn_count', 0)
+        mod_war�ns = staff_data.get('warn_count', 0)
         if mod_warns >= 2:
             await update.message.reply_text(
                 "❌ **LÍMITE ALCANZADO** ❌\n\n"
@@ -2513,7 +2580,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text,
                                       parse_mode=ParseMode.MARKDOWN,
-                                      reply_markup=reply_markup)
+        �                              reply_markup=reply_markup)
 
     elif query.data == 'premium_benefits':
         text = "👑 **BENEFICIOS PREMIUM** 👑\n\n"
@@ -2561,17 +2628,32 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                       reply_markup=reply_markup)
 
     elif query.data == 'paid_commands':
+        user_id = str(query.from_user.id)
+        user_data = db.get_user(user_id)
+        is_admin = query.from_user.id in ADMIN_IDS
+        is_premium = user_data.get('premium', False)
+        
+        if is_admin:
+            methods_text = "🔥 **TODOS LOS MÉTODOS** (Administrador)"
+        elif is_premium:
+            methods_text = "👑 **TODOS LOS MÉTODOS** (Premium)"
+        else:
+            methods_text = "⚡ **5 MÉTODOS** (Usuario estándar)"
+        
         text = "💎 **COMANDOS CON COSTO** 💎\n\n"
-        text += "🔍 **Verificación:**\n"
-        text += "• `/live` - 3 créditos por uso\n"
-        text += "• Hasta 10 tarjetas por comando\n"
-        text += "• Verificación con 4 métodos\n"
-        text += "• Resultados instantáneos\n\n"
-        text += "⚡ **Valor:**\n"
-        text += "• Alta efectividad\n"
-        text += "• Múltiples pasarelas\n"
-        text += "• Formato profesional\n\n"
-        text += "💡 **Tip:** ¡Los admins tienen créditos ilimitados!"
+        text += "🔍 **Verificación `/live`:**\n"
+        text += "• 💰 Costo: 3 créditos por uso\n"
+        text += "• 📊 Hasta 10 tarjetas por comando\n"
+        text += f"• {methods_text}\n"
+        text += "• ⚡ Resultados instantáneos\n\n"
+        text += "🧠 **Extrapolación `/ex`:**\n"
+        text += "• 💰 Costo: 5 créditos (Solo premium/admin)\n"
+        text += "• 🤖 Algoritmos de IA avanzada\n"
+        text += "• 📈 Efectividad 75-85%\n\n"
+        text += "⚡ **Diferencias por tipo de usuario:**\n"
+        text += "• 🆓 **Estándar:** 5 métodos de verificación\n"
+        text += "• 👑 **Premium:** TODOS los métodos disponibles\n"
+        text += "• 🛡️ **Admin:** Créditos ilimitados + todos los métodos"
 
         keyboard = [[
             InlineKeyboardButton("🔙 Regresar",
@@ -2679,7 +2761,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         premium_text = ""
         if user_data['premium']:
             premium_until = datetime.fromisoformat(user_data['premium_until'])
-            days_left = (premium_until - datetime.now()).days
+�            days_left = (premium_until - datetime.now()).days
             premium_text = f"\n👑 **PREMIUM ACTIVO** ({days_left} días)"
 
         response = f"╔═══════════════════════════╗\n"
@@ -2871,7 +2953,7 @@ async def welcome_new_member(update: Update,
         welcome_text = f"🎉 **¡BIENVENIDO A CHERNOBYL CHLV!** 🎉\n\n"
         welcome_text += f"👋 Hola {new_member.mention_markdown()}\n\n"
         welcome_text += f"🔥 **¡Te damos la bienvenida al mejor bot de CCs!**\n\n"
-        welcome_text += f"💡 **Para empezar:**\n"
+        �welcome_text += f"💡 **Para empezar:**\n"
         welcome_text += f"• Usa `/start` para ver todos los comandos\n"
         welcome_text += f"• Obtén créditos gratis con `/bonus`\n"
         welcome_text += f"• Genera tarjetas con `/gen`\n"
