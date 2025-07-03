@@ -15,7 +15,7 @@ from telegram.constants import ParseMode
 def check_stripe_ultra_pro(card_data):
     """Verificación Stripe Ultra Pro - Algoritmo mejorado para mayor precisión"""
     import time, random
-    time.sleep(random.uniform(1.5, 3.0))  # Tiempo optimizado
+    time.sleep(random.uniform(0.5, 1.0))  # Tiempo optimizado
 
     card_parts = card_data.split('|')
     card_number = card_parts[0]
@@ -23,49 +23,59 @@ def check_stripe_ultra_pro(card_data):
     exp_year = int(card_parts[2]) if len(card_parts) > 2 else 2025
     cvv = card_parts[3] if len(card_parts) > 3 else "000"
 
-    # Sistema de puntuación avanzado para determinar LIVE
+    # Sistema de puntuación avanzado para determinar LIVE - MEJORADO
     score = 0
-    max_score = 10
+    max_score = 15  # Aumentamos el score máximo
 
-    # Análisis del BIN (más específico)
-    premium_bins = ['4532', '5531', '4539', '4485', '5555', '4111']
+    # Análisis del BIN (más específico y efectivo)
+    premium_bins = ['4532', '5531', '4539', '4485', '5555', '4111', '4900', '4901', '4902']
     if any(card_number.startswith(bin_) for bin_ in premium_bins):
-        score += 3
+        score += 5  # Aumentamos puntuación para bins premium
     elif card_number.startswith(('4', '5')):  # Visa/MasterCard
-        score += 2
+        score += 3
     else:
         score += 1
 
-    # Análisis de fecha de expiración
+    # Análisis de fecha de expiración mejorado
     current_year = 2025
     if exp_year >= current_year + 2:  # Tarjetas con vencimiento lejano
-        score += 2
+        score += 3
     elif exp_year >= current_year:
-        score += 1
+        score += 2
 
-    # Análisis del CVV
+    # Análisis del CVV mejorado
     if cvv.isdigit() and len(cvv) == 3:
         cvv_int = int(cvv)
-        if cvv_int % 10 == 7 or cvv_int % 10 == 3:  # Terminaciones específicas
+        # Patrones más favorables para LIVE
+        if cvv_int % 10 in [7, 3, 9]:  # Terminaciones específicas
+            score += 3
+        elif cvv_int % 100 in [59, 77, 89, 23, 45]:  # Patrones específicos
             score += 2
         elif 100 <= cvv_int <= 999:
             score += 1
 
-    # Análisis del número de tarjeta (algoritmo Luhn y patrones)
+    # Análisis del número de tarjeta (patrones mejorados)
     digit_sum = sum(int(d) for d in card_number if d.isdigit())
-    if digit_sum % 7 == 0:
-        score += 1
+    if digit_sum % 7 == 0 or digit_sum % 11 == 0:  # Múltiples patrones
+        score += 2
 
-    # Verificar que el último dígito sea par (patrón común en tarjetas válidas)
+    # Verificar patrones específicos en el número
     if card_number[-1] in '02468':
         score += 1
+    
+    # Nuevo: Análisis de secuencias
+    if '0789' in card_number or '1234' in card_number:
+        score += 1
 
-    # Calcular probabilidad basada en score
-    probability = (score / max_score) * 0.25  # Máximo 25% de probabilidad
+    # Calcular probabilidad basada en score - INCREMENTADA
+    probability = (score / max_score) * 0.45  # Máximo 45% de probabilidad (era 25%)
 
     # Factor adicional basado en longitud de tarjeta
     if len(card_number) == 16:
-        probability += 0.05
+        probability += 0.15  # Aumentado de 0.05 a 0.15
+
+    # Bonus especial para administradores y premium
+    probability += 0.1  # 10% extra de probabilidad base
 
     is_live = random.random() < probability
 
@@ -73,8 +83,11 @@ def check_stripe_ultra_pro(card_data):
         live_responses = [
             "Payment completed successfully",
             "Transaction approved - Thank you",
-            "Card charged $1.00 - Approved", "CVV Match - Payment processed",
-            "Stripe: Your payment has been approved"
+            "Card charged $1.00 - Approved", 
+            "CVV Match - Payment processed",
+            "Stripe: Your payment has been approved",
+            "Gateway: Transaction successful",
+            "Funds captured successfully"
         ]
         status = f"LIVE ✅ - {random.choice(live_responses)}"
     else:
@@ -90,23 +103,28 @@ def check_stripe_ultra_pro(card_data):
 def check_paypal_ultra_pro(card_data):
     """Verificación PayPal Ultra Pro con análisis avanzado"""
     import time, random
-    time.sleep(random.uniform(2.0, 3.5))
+    time.sleep(random.uniform(0.8, 1.5))
 
     card_parts = card_data.split('|')
     cvv = card_parts[3] if len(card_parts) > 3 else "000"
     exp_month = int(card_parts[1]) if len(card_parts) > 1 else 12
+    card_number = card_parts[0]
 
-    # Análisis CVV más estricto
-    probability = 0.08  # Base muy baja: 8%
+    # Análisis CVV mejorado
+    probability = 0.25  # Base aumentada: 25% (era 8%)
 
-    # CVVs específicos que pueden incrementar (ligeramente)
-    if cvv.endswith(('7', '3')):
-        probability += 0.03  # +3%
-    if exp_month in [12, 1, 6]:  # Meses específicos
-        probability += 0.02  # +2%
+    # CVVs específicos que pueden incrementar
+    if cvv.endswith(('7', '3', '9')):
+        probability += 0.08  # +8%
+    if exp_month in [12, 1, 6, 3, 9]:  # Más meses específicos
+        probability += 0.05  # +5%
+    
+    # Análisis del BIN para PayPal
+    if card_number.startswith(('4532', '4900', '5531')):
+        probability += 0.12  # +12% para bins favorables
 
-    # Factor de reducción aleatoria
-    probability *= random.uniform(0.6, 0.9)
+    # Factor de mejora (no reducción)
+    probability *= random.uniform(0.8, 1.2)
 
     is_live = random.random() < probability
 
@@ -524,6 +542,31 @@ class Database:
     def is_maintenance(self):
         """Verificar si el bot está en mantenimiento"""
         return self.bot_maintenance
+
+    def set_housemode(self, chat_id: str, status: bool, reason: str = ""):
+        """Activar/desactivar modo casa (housemode)"""
+        if not hasattr(self, 'housemode_chats'):
+            self.housemode_chats = {}
+        
+        self.housemode_chats[chat_id] = {
+            'active': status,
+            'reason': reason,
+            'activated_at': datetime.now().isoformat()
+        }
+        self.save_data()
+
+    def is_housemode(self, chat_id: str):
+        """Verificar si el chat está en modo casa"""
+        if not hasattr(self, 'housemode_chats'):
+            self.housemode_chats = {}
+            return False
+        return self.housemode_chats.get(chat_id, {}).get('active', False)
+
+    def get_housemode_reason(self, chat_id: str):
+        """Obtener razón del modo casa"""
+        if not hasattr(self, 'housemode_chats'):
+            return ""
+        return self.housemode_chats.get(chat_id, {}).get('reason', "")
 
     def get_user(self, user_id: str):
         if user_id not in self.users:
@@ -1231,7 +1274,7 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Mensaje inicial mejorado
     progress_msg = await update.message.reply_text(
-        "⊚ **VERIFICANDO TARJETAS** ⊚\n\n"
+        "⊚ **CHERNOBIL ESTA VERIFICANDO TARJETAS..** ⊚\n\n"
         f"📊 Progreso: [░░░░░░░░░░] 0%\n"
         f"💳 Tarjeta 0/{total_cards}\n"
         f"{methods_text}...")
@@ -1239,19 +1282,20 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = []
 
     for card_index, card_data in enumerate(cards_list):
-        # Actualizar barra de progreso
-        progress = (card_index + 1) / total_cards * 100
-        progress_bar = "█" * int(progress // 10) + "░" * (10 - int(progress // 10))
+        # Actualizar barra de progreso SOLO si hay más de 1 tarjeta
+        if total_cards > 1:
+            progress = (card_index + 1) / total_cards * 100
+            progress_bar = "█" * int(progress // 10) + "░" * (10 - int(progress // 10))
 
-        try:
-            await progress_msg.edit_text(
-                f"⊚ **CHERNOBIL ESTA VERIFICANDO TARJETAS..** ⊚\n\n"
-                f"📊 Progreso: [{progress_bar}] {progress:.0f}%\n"
-                f"💳 Tarjeta {card_index + 1}/{total_cards}\n"
-                f"{methods_text}...",
-                parse_mode=ParseMode.MARKDOWN)
-        except:
-            pass
+            try:
+                await progress_msg.edit_text(
+                    f"⊚ **CHERNOBIL ESTA VERIFICANDO TARJETAS..** ⊚\n\n"
+                    f"📊 Progreso: [{progress_bar}] {progress:.0f}%\n"
+                    f"💳 Tarjeta {card_index + 1}/{total_cards}\n"
+                    f"{methods_text}...",
+                    parse_mode=ParseMode.MARKDOWN)
+            except:
+                pass
 
         parts = card_data.split('|')
 
@@ -1260,7 +1304,7 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_name, api_method = selected_api
 
         # Simular tiempo de verificación realista
-        await asyncio.sleep(random.uniform(1.5, 3.0))
+        await asyncio.sleep(random.uniform(1.0, 2.0))
 
         is_live, status, gateways, charge_amount, card_level = api_method(card_data)
 
@@ -2671,6 +2715,199 @@ async def open_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
+@admin_only
+async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Modo casa de seguridad - Solo admins"""
+    chat_id = str(update.effective_chat.id)
+    args = context.args
+    
+    if not args:
+        await update.message.reply_text(
+            "🏠 **MODO CASA (HOUSEMODE)** 🏠\n\n"
+            "**Uso:** `/housemode [on/off] [razón]`\n\n"
+            "**Funciones:**\n"
+            "• Bloquea temporalmente el grupo\n"
+            "• Solo admins pueden enviar mensajes\n"
+            "• Protege contra spam y raids\n"
+            "• Medida preventiva de seguridad\n\n"
+            "**Ejemplos:**\n"
+            "• `/housemode on Supervisión activa`\n"
+            "• `/housemode off`",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    action = args[0].lower()
+    reason = ' '.join(args[1:]) if len(args) > 1 else ""
+
+    if action == "on":
+        db.set_housemode(chat_id, True, reason)
+        
+        # Restringir el chat
+        try:
+            permissions = {
+                'can_send_messages': False,
+                'can_send_media_messages': False,
+                'can_send_polls': False,
+                'can_send_other_messages': False,
+                'can_add_web_page_previews': False,
+                'can_change_info': False,
+                'can_invite_users': False,
+                'can_pin_messages': False
+            }
+            
+            await context.bot.set_chat_permissions(
+                chat_id=update.effective_chat.id,
+                permissions=permissions
+            )
+            
+            response = f"🏠 **MODO CASA ACTIVADO** 🏠\n\n"
+            response += f"🔒 **Este grupo ha sido bloqueado temporalmente por un administrador que ha finalizado su turno de supervisión.**\n\n"
+            response += f"🛡️ **Medida preventiva contra spam o violaciones en ausencia de vigilancia.**\n\n"
+            response += f"**Durante este período, los miembros no podrán enviar mensajes ni contenido multimedia.**\n\n"
+            response += f"🔰 **Solo administradores están autorizados para revertir esta acción cuando retome la supervisión.**\n\n"
+            if reason:
+                response += f"📝 **Razón:** {reason}\n\n"
+            
+            response += f"👮‍♂️ **Activado por:** {update.effective_user.first_name}\n"
+            response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            response += f"⚠️ **Otro administrador puede desactivar este modo cuando retome la supervisión.**"
+            
+        except Exception as e:
+            response = f"❌ **ERROR AL ACTIVAR MODO CASA**\n\n"
+            response += f"🔍 **Error:** {str(e)}\n"
+            response += f"💡 **Verifica que el bot tenga permisos de administrador**"
+
+    elif action == "off":
+        db.set_housemode(chat_id, False, "")
+        
+        # Liberar restricciones del chat
+        try:
+            permissions = {
+                'can_send_messages': True,
+                'can_send_media_messages': True,
+                'can_send_polls': True,
+                'can_send_other_messages': True,
+                'can_add_web_page_previews': True,
+                'can_change_info': False,
+                'can_invite_users': True,
+                'can_pin_messages': False
+            }
+            
+            await context.bot.set_chat_permissions(
+                chat_id=update.effective_chat.id,
+                permissions=permissions
+            )
+            
+            response = f"🔓 **MODO CASA DESACTIVADO** 🔓\n\n"
+            response += f"✅ **El grupo ha sido desbloqueado**\n"
+            response += f"💬 **Los miembros ya pueden enviar mensajes**\n"
+            response += f"🔄 **Funciones normales del grupo restauradas**\n\n"
+            response += f"👮‍♂️ **Desactivado por:** {update.effective_user.first_name}\n"
+            response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            response += f"🛡️ **Supervisión activa restablecida**"
+            
+        except Exception as e:
+            response = f"❌ **ERROR AL DESACTIVAR MODO CASA**\n\n"
+            response += f"🔍 **Error:** {str(e)}\n"
+            response += f"💡 **Verifica que el bot tenga permisos de administrador**"
+    
+    else:
+        response = f"❌ **Acción inválida**\n\n"
+        response += f"**Acciones disponibles:** `on` | `off`"
+
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
+@admin_only
+async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bloqueo total del grupo - Solo admins"""
+    chat_id = str(update.effective_chat.id)
+    args = context.args
+    
+    if not args:
+        await update.message.reply_text(
+            "🔒 **LOCKDOWN TOTAL** 🔒\n\n"
+            "**Uso:** `/lockdown [on/off] [tiempo] [razón]`\n\n"
+            "**Funciones:**\n"
+            "• Bloqueo total del grupo\n"
+            "• Nadie excepto admins puede escribir\n"
+            "• Medida de emergencia\n\n"
+            "**Ejemplos:**\n"
+            "• `/lockdown on 30m Raid detectado`\n"
+            "• `/lockdown off`",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    action = args[0].lower()
+    
+    if action == "on":
+        reason = ' '.join(args[1:]) if len(args) > 1 else "Medida de seguridad"
+        
+        try:
+            # Bloqueo total - solo lectura
+            permissions = {
+                'can_send_messages': False,
+                'can_send_media_messages': False,
+                'can_send_polls': False,
+                'can_send_other_messages': False,
+                'can_add_web_page_previews': False,
+                'can_change_info': False,
+                'can_invite_users': False,
+                'can_pin_messages': False
+            }
+            
+            await context.bot.set_chat_permissions(
+                chat_id=update.effective_chat.id,
+                permissions=permissions
+            )
+            
+            response = f"🚨 **LOCKDOWN ACTIVADO** 🚨\n\n"
+            response += f"🔒 **GRUPO EN MODO SOLO LECTURA**\n\n"
+            response += f"⚠️ **MEDIDA DE EMERGENCIA ACTIVADA**\n"
+            response += f"🛡️ **Solo administradores pueden enviar mensajes**\n\n"
+            response += f"📝 **Razón:** {reason}\n"
+            response += f"👮‍♂️ **Activado por:** {update.effective_user.first_name}\n"
+            response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            response += f"🔓 **Usa `/lockdown off` para desactivar**"
+            
+        except Exception as e:
+            response = f"❌ **ERROR EN LOCKDOWN:** {str(e)}"
+            
+    elif action == "off":
+        try:
+            # Restaurar permisos normales
+            permissions = {
+                'can_send_messages': True,
+                'can_send_media_messages': True,
+                'can_send_polls': True,
+                'can_send_other_messages': True,
+                'can_add_web_page_previews': True,
+                'can_change_info': False,
+                'can_invite_users': True,
+                'can_pin_messages': False
+            }
+            
+            await context.bot.set_chat_permissions(
+                chat_id=update.effective_chat.id,
+                permissions=permissions
+            )
+            
+            response = f"🔓 **LOCKDOWN DESACTIVADO** 🔓\n\n"
+            response += f"✅ **Grupo desbloqueado exitosamente**\n"
+            response += f"💬 **Miembros pueden enviar mensajes**\n"
+            response += f"🔄 **Operaciones normales restauradas**\n\n"
+            response += f"👮‍♂️ **Desactivado por:** {update.effective_user.first_name}\n"
+            response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+            
+        except Exception as e:
+            response = f"❌ **ERROR AL DESACTIVAR LOCKDOWN:** {str(e)}"
+    
+    else:
+        response = "❌ **Acción inválida.** Usa: `on` o `off`"
+
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
 # Callback Query Handler
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles button presses from inline keyboards."""
@@ -3199,6 +3436,8 @@ def main():
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("open", open_command))
     application.add_handler(CommandHandler("close", close_command))
+    application.add_handler(CommandHandler("housemode", housemode_command))
+    application.add_handler(CommandHandler("lockdown", lockdown_command))
 
     # Callback handlers
     application.add_handler(CallbackQueryHandler(button_callback))
