@@ -1,4 +1,4 @@
-import os
+    import os
 import logging
 import asyncio
 import json
@@ -2179,7 +2179,7 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Eliminar el mensaje de progreso
         try:
             await progress_msg.delete()
-     �   except:
+        except:
             pass
 
         # Información detallada de la limpieza (TEMPORAL)
@@ -2371,7 +2371,7 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if staff_data and staff_data['role'] == '3' and not is_admin:
         # Es moderador, verificar límite de warns
-        mod_war�ns = staff_data.get('warn_count', 0)
+        mod_warns = staff_data.get('warn_count', 0)
         if mod_warns >= 2:
             await update.message.reply_text(
                 "❌ **LÍMITE ALCANZADO** ❌\n\n"
@@ -2580,7 +2580,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text,
                                       parse_mode=ParseMode.MARKDOWN,
-        �                              reply_markup=reply_markup)
+                                      reply_markup=reply_markup)
 
     elif query.data == 'premium_benefits':
         text = "👑 **BENEFICIOS PREMIUM** 👑\n\n"
@@ -2761,7 +2761,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         premium_text = ""
         if user_data['premium']:
             premium_until = datetime.fromisoformat(user_data['premium_until'])
-�            days_left = (premium_until - datetime.now()).days
+            days_left = (premium_until - datetime.now()).days
             premium_text = f"\n👑 **PREMIUM ACTIVO** ({days_left} días)"
 
         response = f"╔═══════════════════════════╗\n"
@@ -2953,7 +2953,7 @@ async def welcome_new_member(update: Update,
         welcome_text = f"🎉 **¡BIENVENIDO A CHERNOBYL CHLV!** 🎉\n\n"
         welcome_text += f"👋 Hola {new_member.mention_markdown()}\n\n"
         welcome_text += f"🔥 **¡Te damos la bienvenida al mejor bot de CCs!**\n\n"
-        �welcome_text += f"💡 **Para empezar:**\n"
+        welcome_text += f"💡 **Para empezar:**\n"
         welcome_text += f"• Usa `/start` para ver todos los comandos\n"
         welcome_text += f"• Obtén créditos gratis con `/bonus`\n"
         welcome_text += f"• Genera tarjetas con `/gen`\n"
