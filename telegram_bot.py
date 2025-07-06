@@ -691,6 +691,9 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 if not BOT_TOKEN:
     print("❌ ERROR: BOT_TOKEN no configurado en las variables de entorno")
     print("Ve a la pestaña Secrets y agrega tu BOT_TOKEN")
+    print("1. Habla con @BotFather en Telegram")
+    print("2. Crea un bot con /newbot")
+    print("3. Copia el token y ponlo en Secrets")
     exit(1)
 
 # Obtener IDs de admin desde variables de entorno
@@ -952,21 +955,34 @@ class AddressGenerator:
         }
 
 
-# Decorador para verificar que el comando se use solo en grupos
+# Decorador para verificar que el comando se use solo en grupos (con excepciones para roles privilegiados)
 def group_only(func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        user_id_str = str(user_id)
+        
         # Verificar si es un chat grupal
         if update.effective_chat.type in ['private']:
-            # Es un chat privado, enviar mensaje de error
-            await update.message.reply_text(
-                "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
-                "❌ **No tienes privilegios para verificar tarjetas en chat privado**\n\n"
-                "🔹 **Este comando solo funciona en grupos**\n"
-                "🔹 **Únete al grupo oficial del bot**\n"
-                "🔹 **Contacta a los administradores para más información**\n\n"
-                "💡 **Tip:** Usa el bot desde el grupo oficial",
-                parse_mode=ParseMode.MARKDOWN)
-            return
+            # Verificar si el usuario tiene privilegios especiales
+            is_founder = user_id in FOUNDER_IDS
+            is_cofounder = user_id in COFOUNDER_IDS
+            is_admin = user_id in ADMIN_IDS
+            
+            # Verificar si es premium
+            user_data = db.get_user(user_id_str)
+            is_premium = user_data.get('premium', False)
+            
+            # Si no tiene privilegios, denegar acceso
+            if not (is_founder or is_cofounder or is_admin or is_premium):
+                await update.message.reply_text(
+                    "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
+                    "❌ **No tienes privilegios para verificar tarjetas en chat privado**\n\n"
+                    "🔹 **Este comando solo funciona en grupos**\n"
+                    "🔹 **Únete al grupo oficial del bot**\n"
+                    "🔹 **Contacta a los administradores para más información**\n\n"
+                    "💡 **Tip:** Usa el bot desde el grupo oficial",
+                    parse_mode=ParseMode.MARKDOWN)
+                return
         
         return await func(update, context)
     return wrapper
@@ -1075,6 +1091,41 @@ def staff_only(required_level=1):
         return wrapper
 
     return decorator
+
+
+async def cleanstatus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Verificar estado de la limpieza automática"""
+    chat_id = str(update.effective_chat.id)
+    
+    if chat_id in auto_clean_timers and auto_clean_timers[chat_id].get('active', False):
+        timer_info = auto_clean_timers[chat_id]
+        interval_text = timer_info.get('interval_text', 'Desconocido')
+        last_clean = timer_info.get('last_clean', 'Nunca')
+        
+        if last_clean != 'Nunca':
+            try:
+                last_clean_date = datetime.fromisoformat(last_clean)
+                last_clean_formatted = last_clean_date.strftime('%d/%m/%Y %H:%M')
+            except:
+                last_clean_formatted = 'Error al obtener fecha'
+        else:
+            last_clean_formatted = 'Nunca'
+        
+        response = f"🧹 **ESTADO DE LIMPIEZA AUTOMÁTICA** 🧹\n\n"
+        response += f"🟢 **Estado:** Activo\n"
+        response += f"⏰ **Intervalo:** {interval_text}\n"
+        response += f"🗑️ **Cantidad por limpieza:** 20 mensajes\n"
+        response += f"📅 **Última limpieza:** {last_clean_formatted}\n\n"
+        response += f"💡 **Para desactivar:** `/clean auto off`"
+    else:
+        response = f"🧹 **ESTADO DE LIMPIEZA AUTOMÁTICA** 🧹\n\n"
+        response += f"🔴 **Estado:** Inactivo\n"
+        response += f"⏰ **Intervalo:** No configurado\n"
+        response += f"📅 **Última limpieza:** Nunca\n\n"
+        response += f"💡 **Para activar:** `/clean auto [tiempo]`\n"
+        response += f"📋 **Ejemplo:** `/clean auto 30m`"
+    
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
 # Comandos principales
@@ -1226,10 +1277,79 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for card in cards:
         response += f"{card}\n"
 
-    # Información del BIN
+    # Información del BIN con bandera
+    country_flags = {
+        'UNITED STATES': '🇺🇸',
+        'CANADA': '🇨🇦',
+        'UNITED KINGDOM': '🇬🇧',
+        'GERMANY': '🇩🇪',
+        'FRANCE': '🇫🇷',
+        'SPAIN': '🇪🇸',
+        'ITALY': '🇮🇹',
+        'BRAZIL': '🇧🇷',
+        'MEXICO': '🇲🇽',
+        'ARGENTINA': '🇦🇷',
+        'COLOMBIA': '🇨🇴',
+        'PERU': '🇵🇪',
+        'CHILE': '🇨🇱',
+        'ECUADOR': '🇪🇨',
+        'VENEZUELA': '🇻🇪',
+        'URUGUAY': '🇺🇾',
+        'PARAGUAY': '🇵🇾',
+        'BOLIVIA': '🇧🇴',
+        'PANAMA': '🇵🇦',
+        'COSTA RICA': '🇨🇷',
+        'GUATEMALA': '🇬🇹',
+        'HONDURAS': '🇭🇳',
+        'EL SALVADOR': '🇸🇻',
+        'NICARAGUA': '🇳🇮',
+        'DOMINICAN REPUBLIC': '🇩🇴',
+        'PUERTO RICO': '🇵🇷',
+        'CUBA': '🇨🇺',
+        'JAMAICA': '🇯🇲',
+        'HAITI': '🇭🇹',
+        'AUSTRALIA': '🇦🇺',
+        'NEW ZEALAND': '🇳🇿',
+        'JAPAN': '🇯🇵',
+        'SOUTH KOREA': '🇰🇷',
+        'CHINA': '🇨🇳',
+        'INDIA': '🇮🇳',
+        'RUSSIA': '🇷🇺',
+        'UKRAINE': '🇺🇦',
+        'POLAND': '🇵🇱',
+        'NETHERLANDS': '🇳🇱',
+        'BELGIUM': '🇧🇪',
+        'SWITZERLAND': '🇨🇭',
+        'AUSTRIA': '🇦🇹',
+        'SWEDEN': '🇸🇪',
+        'NORWAY': '🇳🇴',
+        'DENMARK': '🇩🇰',
+        'FINLAND': '🇫🇮',
+        'PORTUGAL': '🇵🇹',
+        'TURKEY': '🇹🇷',
+        'GREECE': '🇬🇷',
+        'ISRAEL': '🇮🇱',
+        'EGYPT': '🇪🇬',
+        'SOUTH AFRICA': '🇿🇦',
+        'NIGERIA': '🇳🇬',
+        'KENYA': '🇰🇪',
+        'MOROCCO': '🇲🇦',
+        'TUNISIA': '🇹🇳',
+        'ALGERIA': '🇩🇿',
+        'THAILAND': '🇹🇭',
+        'VIETNAM': '🇻🇳',
+        'PHILIPPINES': '🇵🇭',
+        'MALAYSIA': '🇲🇾',
+        'SINGAPORE': '🇸🇬',
+        'INDONESIA': '🇮🇩'
+    }
+    
+    country_name = real_bin_info['country'].upper()
+    country_flag = country_flags.get(country_name, '🌍')
+    
     response += f"\n𝙎𝘾𝙃𝙀𝙈𝘼 ⊱ {real_bin_info['scheme']} | {real_bin_info['type']} | {real_bin_info['level']}\n"
     response += f"𝘽𝘼𝙉𝙆 ⊱ {real_bin_info['bank']}\n"
-    response += f"𝙋𝘼𝙀𝙎𝙀  ⊱ {real_bin_info['country']}"
+    response += f"𝙋𝘼𝙀𝙎𝙀  ⊱ {country_flag} {real_bin_info['country']}"
 
     # Crear botón inline para regenerar
     keyboard = [[
@@ -2900,16 +3020,18 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Restringir el chat
         try:
-            permissions = {
-                'can_send_messages': False,
-                'can_send_media_messages': False,
-                'can_send_polls': False,
-                'can_send_other_messages': False,
-                'can_add_web_page_previews': False,
-                'can_change_info': False,
-                'can_invite_users': False,
-                'can_pin_messages': False
-            }
+            from telegram import ChatPermissions
+            
+            permissions = ChatPermissions(
+                can_send_messages=False,
+                can_send_media_messages=False,
+                can_send_polls=False,
+                can_send_other_messages=False,
+                can_add_web_page_previews=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False
+            )
             
             await context.bot.set_chat_permissions(
                 chat_id=update.effective_chat.id,
@@ -2939,16 +3061,18 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Liberar restricciones del chat
         try:
-            permissions = {
-                'can_send_messages': True,
-                'can_send_media_messages': True,
-                'can_send_polls': True,
-                'can_send_other_messages': True,
-                'can_add_web_page_previews': True,
-                'can_change_info': False,
-                'can_invite_users': True,
-                'can_pin_messages': False
-            }
+            from telegram import ChatPermissions
+            
+            permissions = ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True,
+                can_change_info=False,
+                can_invite_users=True,
+                can_pin_messages=False
+            )
             
             await context.bot.set_chat_permissions(
                 chat_id=update.effective_chat.id,
@@ -3002,16 +3126,18 @@ async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         try:
             # Bloqueo total - solo lectura
-            permissions = {
-                'can_send_messages': False,
-                'can_send_media_messages': False,
-                'can_send_polls': False,
-                'can_send_other_messages': False,
-                'can_add_web_page_previews': False,
-                'can_change_info': False,
-                'can_invite_users': False,
-                'can_pin_messages': False
-            }
+            from telegram import ChatPermissions
+            
+            permissions = ChatPermissions(
+                can_send_messages=False,
+                can_send_media_messages=False,
+                can_send_polls=False,
+                can_send_other_messages=False,
+                can_add_web_page_previews=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False
+            )
             
             await context.bot.set_chat_permissions(
                 chat_id=update.effective_chat.id,
@@ -3033,16 +3159,18 @@ async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "off":
         try:
             # Restaurar permisos normales
-            permissions = {
-                'can_send_messages': True,
-                'can_send_media_messages': True,
-                'can_send_polls': True,
-                'can_send_other_messages': True,
-                'can_add_web_page_previews': True,
-                'can_change_info': False,
-                'can_invite_users': True,
-                'can_pin_messages': False
-            }
+            from telegram import ChatPermissions
+            
+            permissions = ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True,
+                can_change_info=False,
+                can_invite_users=True,
+                can_pin_messages=False
+            )
             
             await context.bot.set_chat_permissions(
                 chat_id=update.effective_chat.id,
@@ -3584,6 +3712,7 @@ def main():
     # Comandos de admin y staff
     application.add_handler(CommandHandler("staff", staff_command))
     application.add_handler(CommandHandler("clean", clean_command))
+    application.add_handler(CommandHandler("cleanstatus", cleanstatus_command))
     application.add_handler(CommandHandler("premium", premium_command))
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("ban", ban_command))
