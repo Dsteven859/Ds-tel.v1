@@ -15,7 +15,11 @@ async def auto_clean_worker(context, chat_id: int, interval_seconds: int):
             break
 
         try:
-            # Realizar limpieza automática de 20 mensajes
+            timer_info = auto_clean_timers.get(str(chat_id), {})
+            is_day_mode = timer_info.get('is_day_mode', False)
+            days_count = timer_info.get('days_count', 0)
+            interval_text = timer_info.get('interval_text', 'Desconocido')
+            
             deleted_count = 0
             current_message_id = None
             
@@ -27,37 +31,107 @@ async def auto_clean_worker(context, chat_id: int, interval_seconds: int):
             except:
                 continue
 
-            # Eliminar 20 mensajes hacia atrás
-            for i in range(1, 21):
-                message_id_to_delete = current_message_id - i
-                if message_id_to_delete > 0:
-                    try:
-                        await context.bot.delete_message(chat_id=chat_id, message_id=message_id_to_delete)
-                        deleted_count += 1
-                        await asyncio.sleep(0.1)
-                    except:
-                        continue
-
-            # Enviar notificación temporal de limpieza automática
-            if deleted_count > 0:
-                interval_text = auto_clean_timers[str(chat_id)]['interval_text']
+            if is_day_mode:
+                # Modo día: Eliminar TODOS los mensajes del período especificado
+                # Calcular cuántos mensajes eliminar (estimación agresiva)
+                
+                # Para 1 día: intentar eliminar hasta 10,000 mensajes hacia atrás
+                # Para más días: eliminar proporcionalmente más
+                max_messages_to_try = min(50000, days_count * 10000)
+                
                 notification = await context.bot.send_message(
                     chat_id,
-                    f"🤖 **LIMPIEZA AUTOMÁTICA EJECUTADA** 🤖\n\n"
-                    f"🗑️ **Mensajes eliminados:** {deleted_count}/20\n"
-                    f"⏰ **Intervalo:** {interval_text}\n"
-                    f"📅 **Próxima limpieza:** {interval_text}\n"
-                    f"🔄 **Estado:** Activo\n\n"
-                    f"💡 **Usa `/clean auto off` para desactivar**",
+                    f"🔥 **LIMPIEZA MASIVA INICIADA** 🔥\n\n"
+                    f"⚠️ **ELIMINANDO TODOS LOS MENSAJES DE {interval_text.upper()}**\n"
+                    f"🗑️ **Procesando hasta {max_messages_to_try:,} mensajes...**\n"
+                    f"⏳ **Esto puede tomar varios minutos**\n\n"
+                    f"🚫 **NO DESACTIVAR DURANTE EL PROCESO**",
                     parse_mode='Markdown'
                 )
                 
-                # Auto-eliminar notificación después de 30 segundos
-                await asyncio.sleep(30)
+                # Eliminar mensajes agresivamente
+                for i in range(1, max_messages_to_try + 1):
+                    message_id_to_delete = current_message_id - i
+                    if message_id_to_delete > 0:
+                        try:
+                            await context.bot.delete_message(chat_id=chat_id, message_id=message_id_to_delete)
+                            deleted_count += 1
+                            
+                            # Actualizar progreso cada 1000 mensajes
+                            if deleted_count % 1000 == 0:
+                                try:
+                                    await notification.edit_text(
+                                        f"🔥 **LIMPIEZA MASIVA EN PROGRESO** 🔥\n\n"
+                                        f"⚠️ **ELIMINANDO TODOS LOS MENSAJES DE {interval_text.upper()}**\n"
+                                        f"🗑️ **Eliminados:** {deleted_count:,}/{max_messages_to_try:,}\n"
+                                        f"📊 **Progreso:** {(deleted_count/max_messages_to_try)*100:.1f}%\n\n"
+                                        f"⏳ **Proceso en curso...**",
+                                        parse_mode='Markdown'
+                                    )
+                                except:
+                                    pass
+                            
+                            # Pausa muy corta para evitar rate limiting
+                            if deleted_count % 50 == 0:
+                                await asyncio.sleep(0.1)
+                                
+                        except Exception as e:
+                            # Si el mensaje no existe o error, continuar
+                            continue
+                            
+                        # Si llevamos mucho tiempo, hacer una pausa más larga
+                        if deleted_count % 2000 == 0:
+                            await asyncio.sleep(1)
+                
+                # Eliminar la notificación de progreso
                 try:
                     await notification.delete()
                 except:
                     pass
+                
+                # Enviar notificación final
+                final_notification = await context.bot.send_message(
+                    chat_id,
+                    f"✅ **LIMPIEZA MASIVA COMPLETADA** ✅\n\n"
+                    f"🗑️ **Mensajes eliminados:** {deleted_count:,}\n"
+                    f"📅 **Período limpiado:** {interval_text}\n"
+                    f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+                    f"🔄 **Próxima limpieza automática:** En {interval_text}\n"
+                    f"💡 **El chat ha sido completamente limpiado**",
+                    parse_mode='Markdown'
+                )
+                
+            else:
+                # Modo estándar: Eliminar 20 mensajes
+                for i in range(1, 21):
+                    message_id_to_delete = current_message_id - i
+                    if message_id_to_delete > 0:
+                        try:
+                            await context.bot.delete_message(chat_id=chat_id, message_id=message_id_to_delete)
+                            deleted_count += 1
+                            await asyncio.sleep(0.1)
+                        except:
+                            continue
+
+                # Enviar notificación temporal de limpieza estándar
+                if deleted_count > 0:
+                    notification = await context.bot.send_message(
+                        chat_id,
+                        f"🤖 **LIMPIEZA AUTOMÁTICA EJECUTADA** 🤖\n\n"
+                        f"🗑️ **Mensajes eliminados:** {deleted_count}/20\n"
+                        f"⏰ **Intervalo:** {interval_text}\n"
+                        f"📅 **Próxima limpieza:** {interval_text}\n"
+                        f"🔄 **Estado:** Activo\n\n"
+                        f"💡 **Usa `/clean auto off` para desactivar**",
+                        parse_mode='Markdown'
+                    )
+                    
+                    # Auto-eliminar notificación después de 30 segundos
+                    await asyncio.sleep(30)
+                    try:
+                        await notification.delete()
+                    except:
+                        pass
 
             # Actualizar timestamp
             auto_clean_timers[str(chat_id)]['last_clean'] = datetime.now().isoformat()
@@ -1100,6 +1174,8 @@ async def cleanstatus_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if chat_id in auto_clean_timers and auto_clean_timers[chat_id].get('active', False):
         timer_info = auto_clean_timers[chat_id]
         interval_text = timer_info.get('interval_text', 'Desconocido')
+        is_day_mode = timer_info.get('is_day_mode', False)
+        days_count = timer_info.get('days_count', 0)
         last_clean = timer_info.get('last_clean', 'Nunca')
         
         if last_clean != 'Nunca':
@@ -1111,11 +1187,24 @@ async def cleanstatus_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             last_clean_formatted = 'Nunca'
         
+        if is_day_mode:
+            clean_description = f"TODOS los mensajes del período de {interval_text}"
+            mode_description = "🔥 **MODO MASIVO** - Eliminación completa"
+        else:
+            clean_description = "20 mensajes por intervalo"
+            mode_description = "🧹 **MODO ESTÁNDAR** - Limpieza ligera"
+        
         response = f"🧹 **ESTADO DE LIMPIEZA AUTOMÁTICA** 🧹\n\n"
         response += f"🟢 **Estado:** Activo\n"
         response += f"⏰ **Intervalo:** {interval_text}\n"
-        response += f"🗑️ **Cantidad por limpieza:** 20 mensajes\n"
+        response += f"🗑️ **Tipo de limpieza:** {clean_description}\n"
+        response += f"⚙️ **Modo:** {mode_description}\n"
         response += f"📅 **Última limpieza:** {last_clean_formatted}\n\n"
+        
+        if is_day_mode:
+            response += f"⚠️ **ADVERTENCIA:** Este modo elimina TODO el historial\n"
+            response += f"🔄 **Próxima limpieza masiva:** En {interval_text}\n\n"
+        
         response += f"💡 **Para desactivar:** `/clean auto off`"
     else:
         response = f"🧹 **ESTADO DE LIMPIEZA AUTOMÁTICA** 🧹\n\n"
@@ -1123,7 +1212,10 @@ async def cleanstatus_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         response += f"⏰ **Intervalo:** No configurado\n"
         response += f"📅 **Última limpieza:** Nunca\n\n"
         response += f"💡 **Para activar:** `/clean auto [tiempo]`\n"
-        response += f"📋 **Ejemplo:** `/clean auto 30m`"
+        response += f"📋 **Ejemplos:**\n"
+        response += f"• `/clean auto 30m` - Limpieza estándar cada 30min\n"
+        response += f"• `/clean auto 1d` - Eliminación masiva diaria\n"
+        response += f"• `/clean auto 7d` - Eliminación masiva semanal"
     
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -2416,9 +2508,11 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• `/clean 50` - Elimina 50 mensajes\n"
             "• `/clean auto 30m` - Limpieza cada 30 minutos\n"
             "• `/clean auto 2h` - Limpieza cada 2 horas\n"
-            "• `/clean auto 1d` - Limpieza cada 1 día\n"
+            "• `/clean auto 1d` - Elimina TODOS los mensajes del día cada 24h\n"
+            "• `/clean auto 7d` - Elimina TODOS los mensajes cada 7 días\n"
             "• `/clean auto off` - Desactivar limpieza automática\n\n"
-            "⚠️ **Límite:** 100 mensajes por limpieza",
+            "⚠️ **Límite manual:** 2000 mensajes\n"
+            "🔥 **Modo días:** Elimina TODO el historial del período",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -2427,7 +2521,7 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(args) < 2:
             await update.message.reply_text(
                 "❌ **Uso:** `/clean auto [tiempo]` o `/clean auto off`\n"
-                "**Ejemplos:** `30m`, `2h`, `1d`, `off`")
+                "**Ejemplos:** `30m`, `2h`, `1d`, `7d`, `off`")
             return
 
         time_arg = args[1].lower()
@@ -2447,6 +2541,7 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Parsear tiempo
         try:
+            is_day_mode = False
             if time_arg.endswith('m'):
                 interval_seconds = int(time_arg[:-1]) * 60
                 interval_text = f"{time_arg[:-1]} minutos"
@@ -2454,8 +2549,10 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 interval_seconds = int(time_arg[:-1]) * 3600
                 interval_text = f"{time_arg[:-1]} horas"
             elif time_arg.endswith('d'):
-                interval_seconds = int(time_arg[:-1]) * 86400
-                interval_text = f"{time_arg[:-1]} días"
+                days = int(time_arg[:-1])
+                interval_seconds = days * 86400
+                interval_text = f"{days} día{'s' if days > 1 else ''}"
+                is_day_mode = True
             else:
                 raise ValueError("Formato inválido")
 
@@ -2468,7 +2565,7 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text(
                 "❌ **Formato inválido**\n"
-                "📋 **Formatos:** `30m`, `2h`, `1d`")
+                "📋 **Formatos:** `30m`, `2h`, `1d`, `7d`")
             return
 
         # Activar limpieza automática
@@ -2476,18 +2573,26 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'active': True,
             'interval': interval_seconds,
             'interval_text': interval_text,
+            'is_day_mode': is_day_mode,
+            'days_count': int(time_arg[:-1]) if is_day_mode else 0,
             'last_clean': datetime.now().isoformat()
         }
 
         # Iniciar el timer en background
         asyncio.create_task(auto_clean_worker(context, chat_id, interval_seconds))
 
+        if is_day_mode:
+            clean_description = f"TODOS los mensajes del período de {interval_text}"
+        else:
+            clean_description = f"20 mensajes cada {interval_text}"
+
         await update.message.reply_text(
             f"✅ **LIMPIEZA AUTOMÁTICA ACTIVADA** ✅\n\n"
             f"⏰ **Intervalo:** {interval_text}\n"
-            f"🧹 **Limpieza:** 20 mensajes cada intervalo\n"
+            f"🧹 **Limpieza:** {clean_description}\n"
             f"👮‍♂️ **Activado por:** {update.effective_user.first_name}\n"
             f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            f"⚠️ **IMPORTANTE:** {'Este modo eliminará TODO el historial de mensajes del período especificado' if is_day_mode else 'Limpieza estándar de 20 mensajes'}\n"
             f"💡 **Usa `/clean auto off` para desactivar**",
             parse_mode=ParseMode.MARKDOWN)
         return
@@ -2501,10 +2606,10 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     count = int(args[0])
-    if count > 100:
+    if count > 2000:
         await update.message.reply_text(
             "❌ **Límite excedido**\n\n"
-            "🔢 **Máximo permitido:** 100 mensajes\n"
+            "🔢 **Máximo permitido:** 2000 mensajes\n"
             "💡 **Usa un número menor e intenta de nuevo**")
         return
 
@@ -2521,7 +2626,7 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Mensaje de progreso
     progress_msg = await update.message.reply_text(
         f"🧹 **INICIANDO LIMPIEZA** 🧹\n\n"
-        f"🔄 Eliminando {count} mensajes...\n"
+        f"🔄 Eliminando {count:,} mensajes...\n"
         f"⏳ Por favor espera...")
 
     try:
@@ -2540,7 +2645,27 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     await context.bot.delete_message(chat_id=chat_id, message_id=message_id_to_delete)
                     deleted_count += 1
-                    await asyncio.sleep(0.05)  # Pausa muy corta
+                    
+                    # Actualizar progreso cada 100 mensajes para cantidades grandes
+                    if count > 100 and deleted_count % 100 == 0:
+                        try:
+                            await progress_msg.edit_text(
+                                f"🧹 **LIMPIEZA EN PROGRESO** 🧹\n\n"
+                                f"🗑️ **Eliminados:** {deleted_count:,}/{count:,}\n"
+                                f"📊 **Progreso:** {(deleted_count/count)*100:.1f}%\n"
+                                f"⏳ **Procesando...**",
+                                parse_mode=ParseMode.MARKDOWN
+                            )
+                        except:
+                            pass
+                    
+                    # Pausa adaptativa según la cantidad
+                    if count > 500:
+                        if deleted_count % 50 == 0:
+                            await asyncio.sleep(0.1)
+                    else:
+                        await asyncio.sleep(0.05)  # Pausa muy corta
+                        
                 except Exception as e:
                     logger.warning(f"No se pudo eliminar mensaje {message_id_to_delete}: {e}")
                     continue
@@ -2555,7 +2680,7 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cleanup_info_temp = "╔═══════════════════════════════╗\n"
         cleanup_info_temp += "║    🧹 **LIMPIEZA COMPLETADA** 🧹    ║\n"
         cleanup_info_temp += "╚═══════════════════════════════╝\n\n"
-        cleanup_info_temp += f"🗑️ **Mensajes eliminados:** {deleted_count}/{count}\n"
+        cleanup_info_temp += f"🗑️ **Mensajes eliminados:** {deleted_count:,}/{count:,}\n"
         cleanup_info_temp += f"📊 **Efectividad:** {(deleted_count/count)*100:.1f}%\n"
         cleanup_info_temp += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}\n"
         cleanup_info_temp += f"👤 **Ejecutado por:** {admin_info.first_name}\n"
@@ -3012,19 +3137,25 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reason = ' '.join(args[1:]) if len(args) > 1 else ""
 
     if action == "on":
-        # Razón automática mejorada si no se proporciona
+        # Razón automática si no se proporciona
         if not reason:
-            reason = "Administrador ausente - Protección automática contra raids, spam masivo y actividad maliciosa. Medida de seguridad preventiva activada."
+            reason = "Administrador ausente - Protección automática contra raids, spam masivo y actividad maliciosa."
         
         db.set_housemode(chat_id, True, reason)
         
-        # Restringir el chat
+        # Restringir el chat - Solo importamos ChatPermissions aquí
         try:
             from telegram import ChatPermissions
             
-            permissions = ChatPermissions(
+            # Crear permisos restrictivos - Solo envío de mensajes bloqueado
+            restricted_permissions = ChatPermissions(
                 can_send_messages=False,
-                can_send_media_messages=False,
+                can_send_audios=False,
+                can_send_documents=False,
+                can_send_photos=False,
+                can_send_videos=False,
+                can_send_video_notes=False,
+                can_send_voice_notes=False,
                 can_send_polls=False,
                 can_send_other_messages=False,
                 can_add_web_page_previews=False,
@@ -3035,37 +3166,42 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await context.bot.set_chat_permissions(
                 chat_id=update.effective_chat.id,
-                permissions=permissions
+                permissions=restricted_permissions
             )
             
             response = f"🏠 **MODO CASA ACTIVADO** 🏠\n\n"
-            response += f"🔒 **Grupo bloqueado temporalmente por ausencia administrativa**\n\n"
-            response += f"🛡️ **Medida de seguridad activada para prevenir:**\n"
-            response += f"• Raids masivos y ataques coordinados\n"
-            response += f"• Spam excesivo de enlaces y contenido\n"
-            response += f"• Actividad maliciosa durante supervisión limitada\n"
-            response += f"• Violaciones de normas en ausencia de moderación\n\n"
-            response += f"⚠️ **Durante este período solo administradores pueden escribir**\n\n"
-            response += f"📝 **Razón específica:** {reason}\n\n"
+            response += f"🔒 **Grupo bloqueado temporalmente**\n\n"
+            response += f"🛡️ **Medidas de seguridad activas:**\n"
+            response += f"• ❌ Usuarios normales no pueden escribir\n"
+            response += f"• ✅ Solo administradores pueden enviar mensajes\n"
+            response += f"• 🚫 Prevención contra raids y spam\n"
+            response += f"• ⚠️ Protección durante ausencia administrativa\n\n"
+            response += f"📝 **Razón:** {reason}\n\n"
             response += f"👮‍♂️ **Activado por:** {update.effective_user.first_name}\n"
             response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            response += f"🔓 **Un administrador puede desactivar con `/housemode off`**"
+            response += f"🔓 **Para desactivar usar:** `/housemode off`"
             
         except Exception as e:
-            response = f"❌ **ERROR AL ACTIVAR MODO CASA**\n\n"
+            response = f"❌ **ERROR AL ACTIVAR MODO CASA** ❌\n\n"
             response += f"🔍 **Error:** {str(e)}\n"
             response += f"💡 **Verifica que el bot tenga permisos de administrador**"
 
     elif action == "off":
         db.set_housemode(chat_id, False, "")
         
-        # Liberar restricciones del chat
+        # Restaurar permisos normales del chat
         try:
             from telegram import ChatPermissions
             
-            permissions = ChatPermissions(
+            # Crear permisos normales
+            normal_permissions = ChatPermissions(
                 can_send_messages=True,
-                can_send_media_messages=True,
+                can_send_audios=True,
+                can_send_documents=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=True,
+                can_send_voice_notes=True,
                 can_send_polls=True,
                 can_send_other_messages=True,
                 can_add_web_page_previews=True,
@@ -3076,7 +3212,7 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await context.bot.set_chat_permissions(
                 chat_id=update.effective_chat.id,
-                permissions=permissions
+                permissions=normal_permissions
             )
             
             response = f"🔓 **MODO CASA DESACTIVADO** 🔓\n\n"
@@ -3088,7 +3224,7 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response += f"🛡️ **Supervisión activa restablecida**"
             
         except Exception as e:
-            response = f"❌ **ERROR AL DESACTIVAR MODO CASA**\n\n"
+            response = f"❌ **ERROR AL DESACTIVAR MODO CASA** ❌\n\n"
             response += f"🔍 **Error:** {str(e)}\n"
             response += f"💡 **Verifica que el bot tenga permisos de administrador**"
     
