@@ -1,15 +1,15 @@
-
 import asyncio
 from typing import Dict, Set
 
 # Variables globales para limpieza automática
 auto_clean_timers: Dict[str, Dict] = {}
 
+
 async def auto_clean_worker(context, chat_id: int, interval_seconds: int):
     """Worker para limpieza automática en background"""
     while auto_clean_timers.get(str(chat_id), {}).get('active', False):
         await asyncio.sleep(interval_seconds)
-        
+
         # Verificar si sigue activo
         if not auto_clean_timers.get(str(chat_id), {}).get('active', False):
             break
@@ -19,10 +19,10 @@ async def auto_clean_worker(context, chat_id: int, interval_seconds: int):
             is_day_mode = timer_info.get('is_day_mode', False)
             days_count = timer_info.get('days_count', 0)
             interval_text = timer_info.get('interval_text', 'Desconocido')
-            
+
             deleted_count = 0
             current_message_id = None
-            
+
             # Obtener ID de mensaje actual aproximado
             try:
                 temp_msg = await context.bot.send_message(chat_id, "🧹")
@@ -34,29 +34,29 @@ async def auto_clean_worker(context, chat_id: int, interval_seconds: int):
             if is_day_mode:
                 # Modo día: Eliminar TODOS los mensajes del período especificado
                 # Calcular cuántos mensajes eliminar (estimación agresiva)
-                
+
                 # Para 1 día: intentar eliminar hasta 10,000 mensajes hacia atrás
                 # Para más días: eliminar proporcionalmente más
                 max_messages_to_try = min(50000, days_count * 10000)
-                
+
                 notification = await context.bot.send_message(
-                    chat_id,
-                    f"🔥 **LIMPIEZA MASIVA INICIADA** 🔥\n\n"
+                    chat_id, f"🔥 **LIMPIEZA MASIVA INICIADA** 🔥\n\n"
                     f"⚠️ **ELIMINANDO TODOS LOS MENSAJES DE {interval_text.upper()}**\n"
                     f"🗑️ **Procesando hasta {max_messages_to_try:,} mensajes...**\n"
                     f"⏳ **Esto puede tomar varios minutos**\n\n"
                     f"🚫 **NO DESACTIVAR DURANTE EL PROCESO**",
-                    parse_mode='Markdown'
-                )
-                
+                    parse_mode='Markdown')
+
                 # Eliminar mensajes agresivamente
                 for i in range(1, max_messages_to_try + 1):
                     message_id_to_delete = current_message_id - i
                     if message_id_to_delete > 0:
                         try:
-                            await context.bot.delete_message(chat_id=chat_id, message_id=message_id_to_delete)
+                            await context.bot.delete_message(
+                                chat_id=chat_id,
+                                message_id=message_id_to_delete)
                             deleted_count += 1
-                            
+
                             # Actualizar progreso cada 1000 mensajes
                             if deleted_count % 1000 == 0:
                                 try:
@@ -66,48 +66,47 @@ async def auto_clean_worker(context, chat_id: int, interval_seconds: int):
                                         f"🗑️ **Eliminados:** {deleted_count:,}/{max_messages_to_try:,}\n"
                                         f"📊 **Progreso:** {(deleted_count/max_messages_to_try)*100:.1f}%\n\n"
                                         f"⏳ **Proceso en curso...**",
-                                        parse_mode='Markdown'
-                                    )
+                                        parse_mode='Markdown')
                                 except:
                                     pass
-                            
+
                             # Pausa muy corta para evitar rate limiting
                             if deleted_count % 50 == 0:
                                 await asyncio.sleep(0.1)
-                                
+
                         except Exception as e:
                             # Si el mensaje no existe o error, continuar
                             continue
-                            
+
                         # Si llevamos mucho tiempo, hacer una pausa más larga
                         if deleted_count % 2000 == 0:
                             await asyncio.sleep(1)
-                
+
                 # Eliminar la notificación de progreso
                 try:
                     await notification.delete()
                 except:
                     pass
-                
+
                 # Enviar notificación final
                 final_notification = await context.bot.send_message(
-                    chat_id,
-                    f"✅ **LIMPIEZA MASIVA COMPLETADA** ✅\n\n"
+                    chat_id, f"✅ **LIMPIEZA MASIVA COMPLETADA** ✅\n\n"
                     f"🗑️ **Mensajes eliminados:** {deleted_count:,}\n"
                     f"📅 **Período limpiado:** {interval_text}\n"
                     f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
                     f"🔄 **Próxima limpieza automática:** En {interval_text}\n"
                     f"💡 **El chat ha sido completamente limpiado**",
-                    parse_mode='Markdown'
-                )
-                
+                    parse_mode='Markdown')
+
             else:
                 # Modo estándar: Eliminar 20 mensajes
                 for i in range(1, 21):
                     message_id_to_delete = current_message_id - i
                     if message_id_to_delete > 0:
                         try:
-                            await context.bot.delete_message(chat_id=chat_id, message_id=message_id_to_delete)
+                            await context.bot.delete_message(
+                                chat_id=chat_id,
+                                message_id=message_id_to_delete)
                             deleted_count += 1
                             await asyncio.sleep(0.1)
                         except:
@@ -116,16 +115,14 @@ async def auto_clean_worker(context, chat_id: int, interval_seconds: int):
                 # Enviar notificación temporal de limpieza estándar
                 if deleted_count > 0:
                     notification = await context.bot.send_message(
-                        chat_id,
-                        f"🤖 **LIMPIEZA AUTOMÁTICA EJECUTADA** 🤖\n\n"
+                        chat_id, f"🤖 **LIMPIEZA AUTOMÁTICA EJECUTADA** 🤖\n\n"
                         f"🗑️ **Mensajes eliminados:** {deleted_count}/20\n"
                         f"⏰ **Intervalo:** {interval_text}\n"
                         f"📅 **Próxima limpieza:** {interval_text}\n"
                         f"🔄 **Estado:** Activo\n\n"
                         f"💡 **Usa `/clean auto off` para desactivar**",
-                        parse_mode='Markdown'
-                    )
-                    
+                        parse_mode='Markdown')
+
                     # Auto-eliminar notificación después de 30 segundos
                     await asyncio.sleep(30)
                     try:
@@ -134,7 +131,8 @@ async def auto_clean_worker(context, chat_id: int, interval_seconds: int):
                         pass
 
             # Actualizar timestamp
-            auto_clean_timers[str(chat_id)]['last_clean'] = datetime.now().isoformat()
+            auto_clean_timers[str(
+                chat_id)]['last_clean'] = datetime.now().isoformat()
 
         except Exception as e:
             logger.error(f"Error en limpieza automática: {e}")
@@ -171,7 +169,9 @@ def check_stripe_ultra_pro(card_data):
     max_score = 15  # Aumentamos el score máximo
 
     # Análisis del BIN (más específico y efectivo)
-    premium_bins = ['4532', '5531', '4539', '4485', '5555', '4111', '4900', '4901', '4902']
+    premium_bins = [
+        '4532', '5531', '4539', '4485', '5555', '4111', '4900', '4901', '4902'
+    ]
     if any(card_number.startswith(bin_) for bin_ in premium_bins):
         score += 5  # Aumentamos puntuación para bins premium
     elif card_number.startswith(('4', '5')):  # Visa/MasterCard
@@ -205,13 +205,14 @@ def check_stripe_ultra_pro(card_data):
     # Verificar patrones específicos en el número
     if card_number[-1] in '02468':
         score += 1
-    
+
     # Nuevo: Análisis de secuencias
     if '0789' in card_number or '1234' in card_number:
         score += 1
 
     # Calcular probabilidad basada en score - INCREMENTADA
-    probability = (score / max_score) * 0.45  # Máximo 45% de probabilidad (era 25%)
+    probability = (score /
+                   max_score) * 0.45  # Máximo 45% de probabilidad (era 25%)
 
     # Factor adicional basado en longitud de tarjeta
     if len(card_number) == 16:
@@ -226,11 +227,9 @@ def check_stripe_ultra_pro(card_data):
         live_responses = [
             "Payment completed successfully",
             "Transaction approved - Thank you",
-            "Card charged $1.00 - Approved", 
-            "CVV Match - Payment processed",
+            "Card charged $1.00 - Approved", "CVV Match - Payment processed",
             "Stripe: Your payment has been approved",
-            "Gateway: Transaction successful",
-            "Funds captured successfully"
+            "Gateway: Transaction successful", "Funds captured successfully"
         ]
         status = f"LIVE ✅ - {random.choice(live_responses)}"
     else:
@@ -261,7 +260,7 @@ def check_paypal_ultra_pro(card_data):
         probability += 0.08  # +8%
     if exp_month in [12, 1, 6, 3, 9]:  # Más meses específicos
         probability += 0.05  # +5%
-    
+
     # Análisis del BIN para PayPal
     if card_number.startswith(('4532', '4900', '5531')):
         probability += 0.12  # +12% para bins favorables
@@ -654,7 +653,8 @@ class Database:
                     self.users = data.get('users', {})
                     self.staff_roles = data.get('staff_roles', {})
                     self.bot_maintenance = data.get('bot_maintenance', False)
-                    self.maintenance_message = data.get('maintenance_message', "")
+                    self.maintenance_message = data.get(
+                        'maintenance_message', "")
         except:
             self.users = {}
             self.staff_roles = {}
@@ -690,7 +690,7 @@ class Database:
         """Activar/desactivar modo casa (housemode)"""
         if not hasattr(self, 'housemode_chats'):
             self.housemode_chats = {}
-        
+
         self.housemode_chats[chat_id] = {
             'active': status,
             'reason': reason,
@@ -878,13 +878,19 @@ class AddressGenerator:
         'US': {
             'cities': [
                 'New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix',
-                'Philadelphia', 'San Antonio', 'San Diego', 'Dallas', 'San Jose'
+                'Philadelphia', 'San Antonio', 'San Diego', 'Dallas',
+                'San Jose'
             ],
-            'states': ['NY', 'CA', 'IL', 'TX', 'AZ', 'PA', 'FL', 'OH', 'GA', 'NC'],
-            'postal_format': lambda: f"{random.randint(10000, 99999)}",
-            'phone_format': lambda: f"+1{random.randint(2000000000, 9999999999)}",
-            'country_name': 'United States',
-            'flag': '🇺🇸'
+            'states':
+            ['NY', 'CA', 'IL', 'TX', 'AZ', 'PA', 'FL', 'OH', 'GA', 'NC'],
+            'postal_format':
+            lambda: f"{random.randint(10000, 99999)}",
+            'phone_format':
+            lambda: f"+1{random.randint(2000000000, 9999999999)}",
+            'country_name':
+            'United States',
+            'flag':
+            '🇺🇸'
         },
         'CO': {
             'cities': [
@@ -896,10 +902,14 @@ class AddressGenerator:
                 'Bolívar', 'Norte de Santander', 'Tolima', 'Santander',
                 'Cundinamarca', 'Córdoba'
             ],
-            'postal_format': lambda: f"{random.randint(100000, 999999)}",
-            'phone_format': lambda: f"+57{random.randint(3000000000, 3999999999)}",
-            'country_name': 'Colombia',
-            'flag': '🇨🇴'
+            'postal_format':
+            lambda: f"{random.randint(100000, 999999)}",
+            'phone_format':
+            lambda: f"+57{random.randint(3000000000, 3999999999)}",
+            'country_name':
+            'Colombia',
+            'flag':
+            '🇨🇴'
         },
         'EC': {
             'cities': [
@@ -910,39 +920,55 @@ class AddressGenerator:
                 'Guayas', 'Pichincha', 'Azuay', 'Santo Domingo', 'El Oro',
                 'Manabí', 'Los Ríos', 'Tungurahua', 'Loja', 'Esmeraldas'
             ],
-            'postal_format': lambda: f"{random.randint(100000, 999999)}",
-            'phone_format': lambda: f"+593{random.randint(900000000, 999999999)}",
-            'country_name': 'Ecuador',
-            'flag': '🇪🇨'
+            'postal_format':
+            lambda: f"{random.randint(100000, 999999)}",
+            'phone_format':
+            lambda: f"+593{random.randint(900000000, 999999999)}",
+            'country_name':
+            'Ecuador',
+            'flag':
+            '🇪🇨'
         },
         'MX': {
             'cities': [
                 'Ciudad de México', 'Guadalajara', 'Monterrey', 'Puebla',
-                'Tijuana', 'León', 'Juárez', 'Torreón', 'Querétaro', 'San Luis Potosí'
+                'Tijuana', 'León', 'Juárez', 'Torreón', 'Querétaro',
+                'San Luis Potosí'
             ],
             'states': [
                 'Ciudad de México', 'Jalisco', 'Nuevo León', 'Puebla',
                 'Baja California', 'Guanajuato', 'Chihuahua', 'Coahuila',
                 'Querétaro', 'San Luis Potosí'
             ],
-            'postal_format': lambda: f"{random.randint(10000, 99999)}",
-            'phone_format': lambda: f"+52{random.randint(5500000000, 5599999999)}",
-            'country_name': 'Mexico',
-            'flag': '🇲🇽'
+            'postal_format':
+            lambda: f"{random.randint(10000, 99999)}",
+            'phone_format':
+            lambda: f"+52{random.randint(5500000000, 5599999999)}",
+            'country_name':
+            'Mexico',
+            'flag':
+            '🇲🇽'
         },
         'BR': {
             'cities': [
-                'São Paulo', 'Rio de Janeiro', 'Brasília', 'Salvador', 'Fortaleza',
-                'Belo Horizonte', 'Manaus', 'Curitiba', 'Recife', 'Porto Alegre'
+                'São Paulo', 'Rio de Janeiro', 'Brasília', 'Salvador',
+                'Fortaleza', 'Belo Horizonte', 'Manaus', 'Curitiba', 'Recife',
+                'Porto Alegre'
             ],
             'states': [
-                'São Paulo', 'Rio de Janeiro', 'Distrito Federal', 'Bahia', 'Ceará',
-                'Minas Gerais', 'Amazonas', 'Paraná', 'Pernambuco', 'Rio Grande do Sul'
+                'São Paulo', 'Rio de Janeiro', 'Distrito Federal', 'Bahia',
+                'Ceará', 'Minas Gerais', 'Amazonas', 'Paraná', 'Pernambuco',
+                'Rio Grande do Sul'
             ],
-            'postal_format': lambda: f"{random.randint(10000, 99999)}-{random.randint(100, 999)}",
-            'phone_format': lambda: f"+55{random.randint(11900000000, 11999999999)}",
-            'country_name': 'Brazil',
-            'flag': '🇧🇷'
+            'postal_format':
+            lambda:
+            f"{random.randint(10000, 99999)}-{random.randint(100, 999)}",
+            'phone_format':
+            lambda: f"+55{random.randint(11900000000, 11999999999)}",
+            'country_name':
+            'Brazil',
+            'flag':
+            '🇧🇷'
         },
         'ES': {
             'cities': [
@@ -951,12 +977,17 @@ class AddressGenerator:
             ],
             'states': [
                 'Madrid', 'Cataluña', 'Valencia', 'Andalucía', 'Aragón',
-                'País Vasco', 'Castilla y León', 'Galicia', 'Murcia', 'Islas Baleares'
+                'País Vasco', 'Castilla y León', 'Galicia', 'Murcia',
+                'Islas Baleares'
             ],
-            'postal_format': lambda: f"{random.randint(10000, 52999)}",
-            'phone_format': lambda: f"+34{random.randint(600000000, 799999999)}",
-            'country_name': 'Spain',
-            'flag': '🇪🇸'
+            'postal_format':
+            lambda: f"{random.randint(10000, 52999)}",
+            'phone_format':
+            lambda: f"+34{random.randint(600000000, 799999999)}",
+            'country_name':
+            'Spain',
+            'flag':
+            '🇪🇸'
         },
         'AR': {
             'cities': [
@@ -967,10 +998,15 @@ class AddressGenerator:
                 'Buenos Aires', 'Córdoba', 'Santa Fe', 'Mendoza', 'Tucumán',
                 'Entre Ríos', 'Salta', 'Misiones', 'Chaco', 'Corrientes'
             ],
-            'postal_format': lambda: f"{random.choice(['C', 'B', 'A'])}{random.randint(1000, 9999)}{random.choice(['AAA', 'BBB', 'CCC'])}",
-            'phone_format': lambda: f"+54{random.randint(11000000000, 11999999999)}",
-            'country_name': 'Argentina',
-            'flag': '🇦🇷'
+            'postal_format':
+            lambda:
+            f"{random.choice(['C', 'B', 'A'])}{random.randint(1000, 9999)}{random.choice(['AAA', 'BBB', 'CCC'])}",
+            'phone_format':
+            lambda: f"+54{random.randint(11000000000, 11999999999)}",
+            'country_name':
+            'Argentina',
+            'flag':
+            '🇦🇷'
         },
         'KZ': {
             'cities': [
@@ -981,31 +1017,42 @@ class AddressGenerator:
                 'Almaty', 'Nur-Sultan', 'Shymkent', 'Aktobe', 'Zhambyl',
                 'Pavlodar', 'East Kazakhstan', 'Semey', 'Atyrau', 'Kostanay'
             ],
-            'postal_format': lambda: f"{random.randint(100000, 999999)}",
-            'phone_format': lambda: f"+7{random.randint(7000000000, 7999999999)}",
-            'country_name': 'Kazakhstan',
-            'flag': '🇰🇿'
+            'postal_format':
+            lambda: f"{random.randint(100000, 999999)}",
+            'phone_format':
+            lambda: f"+7{random.randint(7000000000, 7999999999)}",
+            'country_name':
+            'Kazakhstan',
+            'flag':
+            '🇰🇿'
         },
         'AE': {
             'cities': [
                 'Dubai', 'Abu Dhabi', 'Sharjah', 'Al Ain', 'Ajman',
-                'Ras Al Khaimah', 'Fujairah', 'Umm Al Quwain', 'Dibba', 'Khor Fakkan'
+                'Ras Al Khaimah', 'Fujairah', 'Umm Al Quwain', 'Dibba',
+                'Khor Fakkan'
             ],
             'states': [
                 'Dubai', 'Abu Dhabi', 'Sharjah', 'Al Ain', 'Ajman',
-                'Ras Al Khaimah', 'Fujairah', 'Umm Al Quwain', 'Northern Emirates', 'Eastern Region'
+                'Ras Al Khaimah', 'Fujairah', 'Umm Al Quwain',
+                'Northern Emirates', 'Eastern Region'
             ],
-            'postal_format': lambda: f"{random.randint(100000, 999999)}",
-            'phone_format': lambda: f"+971{random.randint(500000000, 599999999)}",
-            'country_name': 'United Arab Emirates',
-            'flag': '🇦🇪'
+            'postal_format':
+            lambda: f"{random.randint(100000, 999999)}",
+            'phone_format':
+            lambda: f"+971{random.randint(500000000, 599999999)}",
+            'country_name':
+            'United Arab Emirates',
+            'flag':
+            '🇦🇪'
         }
     }
 
     @staticmethod
     def generate_address(country: str = None) -> dict:
         if not country:
-            country = random.choice(list(AddressGenerator.COUNTRIES_DATA.keys()))
+            country = random.choice(
+                list(AddressGenerator.COUNTRIES_DATA.keys()))
 
         if country not in AddressGenerator.COUNTRIES_DATA:
             return None
@@ -1019,7 +1066,8 @@ class AddressGenerator:
         ]
 
         return {
-            'street': f"{random.randint(1, 9999)} {random.choice(street_names)}",
+            'street':
+            f"{random.randint(1, 9999)} {random.choice(street_names)}",
             'city': random.choice(data['cities']),
             'state': random.choice(data['states']),
             'postal_code': data['postal_format'](),
@@ -1031,21 +1079,22 @@ class AddressGenerator:
 
 # Decorador para verificar que el comando se use solo en grupos (con excepciones para roles privilegiados)
 def group_only(func):
+
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         user_id_str = str(user_id)
-        
+
         # Verificar si es un chat grupal
         if update.effective_chat.type in ['private']:
             # Verificar si el usuario tiene privilegios especiales
             is_founder = user_id in FOUNDER_IDS
             is_cofounder = user_id in COFOUNDER_IDS
             is_admin = user_id in ADMIN_IDS
-            
+
             # Verificar si es premium
             user_data = db.get_user(user_id_str)
             is_premium = user_data.get('premium', False)
-            
+
             # Si no tiene privilegios, denegar acceso
             if not (is_founder or is_cofounder or is_admin or is_premium):
                 await update.message.reply_text(
@@ -1057,9 +1106,11 @@ def group_only(func):
                     "💡 **Tip:** Usa el bot desde el grupo oficial",
                     parse_mode=ParseMode.MARKDOWN)
                 return
-        
+
         return await func(update, context)
+
     return wrapper
+
 
 # Decorador para verificar créditos (solo para live)
 def require_credits_for_live(credits_needed: int = 3):
@@ -1110,11 +1161,12 @@ def admin_only(func):
 
 # Decorador para verificar mantenimiento
 def check_maintenance(func):
+
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Los admins pueden usar comandos durante mantenimiento
         if update.effective_user.id in ADMIN_IDS:
             return await func(update, context)
-        
+
         # Si está en mantenimiento, bloquear comando
         if db.is_maintenance():
             maintenance_msg = db.maintenance_message or "🔧 Bot en mantenimiento. Intenta más tarde."
@@ -1124,9 +1176,11 @@ def check_maintenance(func):
                 f"💡 Contacta a los administradores para más información",
                 parse_mode=ParseMode.MARKDOWN)
             return
-        
+
         return await func(update, context)
+
     return wrapper
+
 
 # Decorador para verificar roles de staff
 def staff_only(required_level=1):
@@ -1167,44 +1221,47 @@ def staff_only(required_level=1):
     return decorator
 
 
-async def cleanstatus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cleanstatus_command(update: Update,
+                              context: ContextTypes.DEFAULT_TYPE):
     """Verificar estado de la limpieza automática"""
     chat_id = str(update.effective_chat.id)
-    
-    if chat_id in auto_clean_timers and auto_clean_timers[chat_id].get('active', False):
+
+    if chat_id in auto_clean_timers and auto_clean_timers[chat_id].get(
+            'active', False):
         timer_info = auto_clean_timers[chat_id]
         interval_text = timer_info.get('interval_text', 'Desconocido')
         is_day_mode = timer_info.get('is_day_mode', False)
         days_count = timer_info.get('days_count', 0)
         last_clean = timer_info.get('last_clean', 'Nunca')
-        
+
         if last_clean != 'Nunca':
             try:
                 last_clean_date = datetime.fromisoformat(last_clean)
-                last_clean_formatted = last_clean_date.strftime('%d/%m/%Y %H:%M')
+                last_clean_formatted = last_clean_date.strftime(
+                    '%d/%m/%Y %H:%M')
             except:
                 last_clean_formatted = 'Error al obtener fecha'
         else:
             last_clean_formatted = 'Nunca'
-        
+
         if is_day_mode:
             clean_description = f"TODOS los mensajes del período de {interval_text}"
             mode_description = "🔥 **MODO MASIVO** - Eliminación completa"
         else:
             clean_description = "20 mensajes por intervalo"
             mode_description = "🧹 **MODO ESTÁNDAR** - Limpieza ligera"
-        
+
         response = f"🧹 **ESTADO DE LIMPIEZA AUTOMÁTICA** 🧹\n\n"
         response += f"🟢 **Estado:** Activo\n"
         response += f"⏰ **Intervalo:** {interval_text}\n"
         response += f"🗑️ **Tipo de limpieza:** {clean_description}\n"
         response += f"⚙️ **Modo:** {mode_description}\n"
         response += f"📅 **Última limpieza:** {last_clean_formatted}\n\n"
-        
+
         if is_day_mode:
             response += f"⚠️ **ADVERTENCIA:** Este modo elimina TODO el historial\n"
             response += f"🔄 **Próxima limpieza masiva:** En {interval_text}\n\n"
-        
+
         response += f"💡 **Para desactivar:** `/clean auto off`"
     else:
         response = f"🧹 **ESTADO DE LIMPIEZA AUTOMÁTICA** 🧹\n\n"
@@ -1216,7 +1273,7 @@ async def cleanstatus_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         response += f"• `/clean auto 30m` - Limpieza estándar cada 30min\n"
         response += f"• `/clean auto 1d` - Eliminación masiva diaria\n"
         response += f"• `/clean auto 7d` - Eliminación masiva semanal"
-    
+
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
@@ -1296,11 +1353,14 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raw_bin = parts[0].replace('x', '').replace('X', '')
             # Tomar solo los primeros 6-8 dígitos como BIN
             bin_number = ''.join([c for c in raw_bin if c.isdigit()])[:8]
-            
-            preset_month = parts[1] if len(parts) > 1 and parts[1].isdigit() else None
-            preset_year = parts[2] if len(parts) > 2 and parts[2].isdigit() else None
-            preset_cvv = parts[3] if len(parts) > 3 and parts[3].isdigit() else None
-    
+
+            preset_month = parts[1] if len(
+                parts) > 1 and parts[1].isdigit() else None
+            preset_year = parts[2] if len(
+                parts) > 2 and parts[2].isdigit() else None
+            preset_cvv = parts[3] if len(
+                parts) > 3 and parts[3].isdigit() else None
+
     # Manejar formato con slash (55791004431xxxxxx/08/27)
     elif '/' in input_data:
         parts = input_data.split('/')
@@ -1309,7 +1369,8 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bin_number = ''.join([c for c in raw_bin if c.isdigit()])[:8]
             preset_month = parts[1] if parts[1].isdigit() else None
             preset_year = f"20{parts[2]}" if len(parts[2]) == 2 else parts[2]
-            preset_cvv = args[1] if len(args) > 1 and args[1].isdigit() else None
+            preset_cvv = args[1] if len(
+                args) > 1 and args[1].isdigit() else None
         else:
             await update.message.reply_text(
                 "❌ Formato incorrecto. Usa: 55791004431xxxxxx/08/27")
@@ -1435,10 +1496,10 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'SINGAPORE': '🇸🇬',
         'INDONESIA': '🇮🇩'
     }
-    
+
     country_name = real_bin_info['country'].upper()
     country_flag = country_flags.get(country_name, '🌍')
-    
+
     response += f"\n𝙎𝘾𝙃𝙀𝙈𝘼 ⊱ {real_bin_info['scheme']} | {real_bin_info['type']} | {real_bin_info['level']}\n"
     response += f"𝘽𝘼𝙉𝙆 ⊱ {real_bin_info['bank']}\n"
     response += f"𝙋𝘼𝙀𝙎𝙀  ⊱ {country_flag} {real_bin_info['country']}"
@@ -1534,23 +1595,22 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_cards = len(cards_list)
 
     # APIs disponibles según tipo de usuario
-    all_api_methods = [
-        ("Stripe", check_stripe_ultra_pro),
-        ("PayPal", check_paypal_ultra_pro), 
-        ("Braintree", check_braintree_ultra_pro),
-        ("Authorize.net", check_authorize_ultra_pro),
-        ("Square", check_square_ultra_pro),
-        ("Adyen", check_adyen_ultra_pro),
-        ("Worldpay", check_worldpay_ultra_pro),
-        ("CyberSource", check_cybersource_ultra_pro)
-    ]
-    
+    all_api_methods = [("Stripe", check_stripe_ultra_pro),
+                       ("PayPal", check_paypal_ultra_pro),
+                       ("Braintree", check_braintree_ultra_pro),
+                       ("Authorize.net", check_authorize_ultra_pro),
+                       ("Square", check_square_ultra_pro),
+                       ("Adyen", check_adyen_ultra_pro),
+                       ("Worldpay", check_worldpay_ultra_pro),
+                       ("CyberSource", check_cybersource_ultra_pro)]
+
     # Determinar métodos disponibles según tipo de usuario
     if is_admin or user_data.get('premium', False):
         api_methods = all_api_methods  # Todos los métodos
         methods_text = f"⚡ Usando {len(api_methods)} APIs simultáneas (TODOS los métodos)"
     else:
-        api_methods = all_api_methods[:5]  # Solo 5 métodos para usuarios estándar
+        api_methods = all_api_methods[:
+                                      5]  # Solo 5 métodos para usuarios estándar
         methods_text = f"⚡ Usando {len(api_methods)} APIs simultáneas (métodos estándar)"
 
     # Mensaje inicial mejorado - diferente para 1 tarjeta vs múltiples
@@ -1572,7 +1632,8 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Actualizar barra de progreso SOLO si hay más de 1 tarjeta
         if total_cards > 1:
             progress = (card_index + 1) / total_cards * 100
-            progress_bar = "█" * int(progress // 10) + "░" * (10 - int(progress // 10))
+            progress_bar = "█" * int(
+                progress // 10) + "░" * (10 - int(progress // 10))
 
             try:
                 await progress_msg.edit_text(
@@ -1593,21 +1654,29 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Simular tiempo de verificación realista
         await asyncio.sleep(random.uniform(1.0, 2.0))
 
-        is_live, status, gateways, charge_amount, card_level = api_method(card_data)
+        is_live, status, gateways, charge_amount, card_level = api_method(
+            card_data)
 
         results.append({
-            'card_data': card_data,
-            'parts': parts,
-            'is_live': is_live,
-            'api': api_name,
-            'status': "LIVE ✅" if is_live else "DEAD ❌",
-            'result': random.choice([
+            'card_data':
+            card_data,
+            'parts':
+            parts,
+            'is_live':
+            is_live,
+            'api':
+            api_name,
+            'status':
+            "LIVE ✅" if is_live else "DEAD ❌",
+            'result':
+            random.choice([
                 "Approved", "CVV Match", "Charged $1.00", "Transaction Success"
             ]) if is_live else random.choice([
                 "Declined", "Insufficient Funds", "Expired Card",
                 "Invalid CVV", "Call Voice Center(01)"
             ]),
-            'index': card_index + 1
+            'index':
+            card_index + 1
         })
 
     # Resultado final con formato mejorado
@@ -1628,15 +1697,20 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     final_response += f"⚡ **Efectividad:** {(live_count/total_cards)*100:.1f}%"
 
     # Actualizar estadísticas
-    db.update_user(user_id, {'total_checked': user_data['total_checked'] + len(cards_list)})
+    db.update_user(
+        user_id,
+        {'total_checked': user_data['total_checked'] + len(cards_list)})
 
     try:
-        await progress_msg.edit_text(final_response, parse_mode=ParseMode.MARKDOWN)
+        await progress_msg.edit_text(final_response,
+                                     parse_mode=ParseMode.MARKDOWN)
     except:
-        await update.message.reply_text(final_response, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(final_response,
+                                        parse_mode=ParseMode.MARKDOWN)
 
 
-async def direccion_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def direccion_command(update: Update,
+                            context: ContextTypes.DEFAULT_TYPE):
     """Generar direcciones por país con datos 100% reales"""
     args = context.args
     country = args[0].upper() if args else None
@@ -1652,13 +1726,14 @@ async def direccion_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         response += f"\n**Ejemplos:**\n"
         response += f"• `/direccion US` - Estados Unidos\n"
-        response += f"• `/direccion BR` - Brasil\n" 
+        response += f"• `/direccion BR` - Brasil\n"
         response += f"• `/direccion ES` - España\n"
         response += f"• `/direccion AR` - Argentina\n"
         response += f"• `/direccion KZ` - Kazajistán\n"
         response += f"• `/direccion AE` - Dubái (UAE)"
 
-        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(response,
+                                        parse_mode=ParseMode.MARKDOWN)
         return
 
     # Generar dirección
@@ -1722,7 +1797,7 @@ async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Usa /bonus para créditos gratis o /infocredits para más información",
                 parse_mode=ParseMode.MARKDOWN)
             return
-        
+
         # Descontar créditos
         db.update_user(user_id, {'credits': user_data['credits'] - 5})
 
@@ -1760,7 +1835,7 @@ async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         base_card = parts[0]
         preset_month = parts[1]
-        preset_year = parts[2] 
+        preset_year = parts[2]
         preset_cvv = parts[3]
     else:
         # Solo número: 4532123456781234
@@ -1805,7 +1880,7 @@ async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Formato de respuesta mejorado
     final_response = "╔═══════════════════════════════╗\n"
-    final_response += "║  🧠 **EXTRAPOLACIÓN COMPLETA** 🧠  ║\n"  
+    final_response += "║  🧠 **EXTRAPOLACIÓN COMPLETA** 🧠  ║\n"
     final_response += "╚═══════════════════════════════╝\n\n"
 
     final_response += f"🎯 **BIN Analizado:** {bin_number}xxxxxx\n"
@@ -1824,9 +1899,11 @@ async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     final_response += "🤖 **Generado por IA avanzada**"
 
     try:
-        await process_msg.edit_text(final_response, parse_mode=ParseMode.MARKDOWN)
+        await process_msg.edit_text(final_response,
+                                    parse_mode=ParseMode.MARKDOWN)
     except:
-        await update.message.reply_text(final_response, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(final_response,
+                                        parse_mode=ParseMode.MARKDOWN)
 
 
 async def bonus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1889,7 +1966,8 @@ async def detect_payment_gateways(url: str):
         from bs4 import BeautifulSoup
 
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
 
         response = requests.get(url, headers=headers, timeout=10)
@@ -1899,42 +1977,65 @@ async def detect_payment_gateways(url: str):
 
         # Buscar en HTML, scripts y meta tags
         html_content = str(soup).lower()
-        scripts = str([script.get_text() for script in soup.find_all('script')]).lower()
+        scripts = str(
+            [script.get_text() for script in soup.find_all('script')]).lower()
         full_content = html_content + scripts
 
         # Pasarelas destacadas (más efectivas para CC)
         gateways_destacadas = {
-            'shopify': ['🔥 Shopify Payments', ['shopify', 'shopify-pay', 'shop-pay']],
-            'woocommerce': ['🔥 WooCommerce', ['woocommerce', 'wc-', 'wordpress']],
+            'shopify':
+            ['🔥 Shopify Payments', ['shopify', 'shopify-pay', 'shop-pay']],
+            'woocommerce':
+            ['🔥 WooCommerce', ['woocommerce', 'wc-', 'wordpress']],
             'magento': ['🔥 Magento', ['magento', 'mage-', 'mage_']]
         }
 
         # Pasarelas principales (muy comunes)
         gateways_principales = {
-            'paypal': ['✅ PayPal', ['paypal', 'pp-', 'paypal.com', 'paypalobjects']],
-            'stripe': ['✅ Stripe', ['stripe', 'js.stripe.com', 'stripe.com', 'sk_live', 'pk_live']],
-            'square': ['✅ Square', ['square', 'squareup', 'square.com', 'sq-']],
-            'authorize': ['✅ Authorize.net', ['authorize.net', 'authorizenet', 'authorize-net']],
-            'braintree': ['✅ Braintree', ['braintree', 'braintreepayments', 'bt-']],
+            'paypal':
+            ['✅ PayPal', ['paypal', 'pp-', 'paypal.com', 'paypalobjects']],
+            'stripe': [
+                '✅ Stripe',
+                [
+                    'stripe', 'js.stripe.com', 'stripe.com', 'sk_live',
+                    'pk_live'
+                ]
+            ],
+            'square':
+            ['✅ Square', ['square', 'squareup', 'square.com', 'sq-']],
+            'authorize': [
+                '✅ Authorize.net',
+                ['authorize.net', 'authorizenet', 'authorize-net']
+            ],
+            'braintree':
+            ['✅ Braintree', ['braintree', 'braintreepayments', 'bt-']],
             'adyen': ['✅ Adyen', ['adyen', 'adyen.com', 'adyen-']],
             'worldpay': ['✅ Worldpay', ['worldpay', 'worldpay.com', 'wp-']]
         }
 
         # Otras pasarelas detectables
         gateways_otras = {
-            'applepay': ['🍎 Apple Pay', ['apple-pay', 'applepay', 'apple_pay']],
-            'googlepay': ['🔵 Google Pay', ['google-pay', 'googlepay', 'google_pay', 'gpay']],
-            'amazonpay': ['📦 Amazon Pay', ['amazon-pay', 'amazonpay', 'amazon_pay']],
+            'applepay':
+            ['🍎 Apple Pay', ['apple-pay', 'applepay', 'apple_pay']],
+            'googlepay': [
+                '🔵 Google Pay',
+                ['google-pay', 'googlepay', 'google_pay', 'gpay']
+            ],
+            'amazonpay':
+            ['📦 Amazon Pay', ['amazon-pay', 'amazonpay', 'amazon_pay']],
             'venmo': ['💜 Venmo', ['venmo', 'venmo.com']],
             'klarna': ['🔶 Klarna', ['klarna', 'klarna.com']],
             'afterpay': ['⚪ Afterpay', ['afterpay', 'afterpay.com']],
             'affirm': ['🟣 Affirm', ['affirm', 'affirm.com']],
             'razorpay': ['⚡ Razorpay', ['razorpay', 'razorpay.com']],
             'payu': ['🟡 PayU', ['payu', 'payu.com', 'payu-']],
-            'mercadopago': ['🟢 MercadoPago', ['mercadopago', 'mercado-pago', 'mp-']],
-            'checkout': ['🔷 Checkout.com', ['checkout.com', 'checkout-', 'cko-']],
+            'mercadopago':
+            ['🟢 MercadoPago', ['mercadopago', 'mercado-pago', 'mp-']],
+            'checkout':
+            ['🔷 Checkout.com', ['checkout.com', 'checkout-', 'cko-']],
             'mollie': ['🟠 Mollie', ['mollie', 'mollie.com']],
-            'cybersource': ['🔐 CyberSource', ['cybersource', 'cybersource.com']],
+            'cybersource':
+            ['🔐 CyberSource', ['cybersource', 'cybersource.com']],
             'bluepay': ['🔹 BluePay', ['bluepay', 'bluepay.com']],
             'firstdata': ['🔴 First Data', ['firstdata', 'first-data']],
             'elavon': ['🔵 Elavon', ['elavon', 'elavon.com']],
@@ -1945,7 +2046,8 @@ async def detect_payment_gateways(url: str):
             'coinbase': ['🪙 Coinbase', ['coinbase', 'coinbase.com']],
             'binance': ['⚡ Binance Pay', ['binance', 'binancepay']],
             'alipay': ['🇨🇳 Alipay', ['alipay', 'alipay.com']],
-            'wechatpay': ['💬 WeChat Pay', ['wechat', 'wechatpay', 'wechat-pay']]
+            'wechatpay':
+            ['💬 WeChat Pay', ['wechat', 'wechatpay', 'wechat-pay']]
         }
 
         # Detectar cada categoría
@@ -2197,10 +2299,9 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if amount <= 0:
-        await update.message.reply_text(
-            "❌ **Cantidad inválida**\n\n"
-            "💡 La cantidad debe ser mayor a 0\n"
-            "📊 **Mínimo:** 1 crédito")
+        await update.message.reply_text("❌ **Cantidad inválida**\n\n"
+                                        "💡 La cantidad debe ser mayor a 0\n"
+                                        "📊 **Mínimo:** 1 crédito")
         return
 
     # Verificar créditos suficientes
@@ -2215,7 +2316,8 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "💡 **Obtén más créditos con:**\n"
             "• `/bonus` - Bono diario gratis\n"
             "• `/juegos` - Casino bot\n"
-            "• `/apply_key` - Clave premium",
+            "• `/apply_key` - Clave premium"
+            "• Contacto con @SteveCHBll para mas creditos",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -2226,7 +2328,8 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin:
         db.update_user(user_id, {'credits': user_data['credits'] - amount})
 
-    db.update_user(target_user_id, {'credits': target_user_data['credits'] + amount})
+    db.update_user(target_user_id,
+                   {'credits': target_user_data['credits'] + amount})
 
     # Respuesta exitosa mejorada
     response = "╔═══════════════════════════════╗\n"
@@ -2490,8 +2593,8 @@ async def staff_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 auto_clean_active = {}  # Diccionario global para controlar auto-limpieza
 
-
 auto_clean_timers = {}  # Diccionario global para timers
+
 
 @admin_only
 async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2511,8 +2614,7 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• `/clean auto 1d` - Elimina TODOS los mensajes del día cada 24h\n"
             "• `/clean auto 7d` - Elimina TODOS los mensajes cada 7 días\n"
             "• `/clean auto off` - Desactivar limpieza automática\n\n"
-            "⚠️ **Límite manual:** 2000 mensajes\n"
-            "🔥 **Modo días:** Elimina TODO el historial del período",
+            "⚠️ **Límite manual:** 2000 mensajes\n",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -2520,12 +2622,12 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if args[0].lower() == "auto":
         if len(args) < 2:
             await update.message.reply_text(
-                "❌ **Uso:** `/clean auto [tiempo]` o `/clean auto off`\n"
-                "**Ejemplos:** `30m`, `2h`, `1d`, `7d`, `off`")
+                "❌ Uso: `/clean auto [tiempo]` o `/clean auto off`\n"
+                "Ejemplos: `30m`, `2h`, `1d`, `7d`, `off`")
             return
 
         time_arg = args[1].lower()
-        
+
         if time_arg == "off":
             if str(chat_id) in auto_clean_timers:
                 auto_clean_timers[str(chat_id)]['active'] = False
@@ -2536,7 +2638,8 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}",
                     parse_mode=ParseMode.MARKDOWN)
             else:
-                await update.message.reply_text("💡 **No hay limpieza automática activa**")
+                await update.message.reply_text(
+                    "💡 **No hay limpieza automática activa**")
             return
 
         # Parsear tiempo
@@ -2557,15 +2660,14 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise ValueError("Formato inválido")
 
             if interval_seconds < 300:  # Mínimo 5 minutos
-                await update.message.reply_text(
-                    "❌ **Intervalo muy corto**\n"
-                    "⏰ **Mínimo:** 5 minutos (`5m`)")
+                await update.message.reply_text("❌ Intervalo muy corto\n"
+                                                "⏰ Mínimo: 5 minutos (`5m`)")
                 return
 
         except ValueError:
             await update.message.reply_text(
-                "❌ **Formato inválido**\n"
-                "📋 **Formatos:** `30m`, `2h`, `1d`, `7d`")
+                "❌ Formato inválido\n"
+                "📋 Formatos: `30m`, `2h`, `1d`, `7d`")
             return
 
         # Activar limpieza automática
@@ -2579,7 +2681,8 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
         # Iniciar el timer en background
-        asyncio.create_task(auto_clean_worker(context, chat_id, interval_seconds))
+        asyncio.create_task(
+            auto_clean_worker(context, chat_id, interval_seconds))
 
         if is_day_mode:
             clean_description = f"TODOS los mensajes del período de {interval_text}"
@@ -2614,10 +2717,9 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if count < 1:
-        await update.message.reply_text(
-            "❌ **Cantidad inválida**\n\n"
-            "🔢 **Mínimo:** 1 mensaje\n"
-            "📋 **Ejemplo:** `/clean 10`")
+        await update.message.reply_text("❌ **Cantidad inválida**\n\n"
+                                        "🔢 **Mínimo:** 1 mensaje\n"
+                                        "📋 **Ejemplo:** `/clean 10`")
         return
 
     admin_info = update.effective_user
@@ -2639,13 +2741,15 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
         # Eliminar mensajes hacia atrás desde el mensaje de progreso
-        for i in range(1, count + 2):  # +2 para incluir el comando y el progreso
+        for i in range(1,
+                       count + 2):  # +2 para incluir el comando y el progreso
             message_id_to_delete = current_message_id - i
             if message_id_to_delete > 0:
                 try:
-                    await context.bot.delete_message(chat_id=chat_id, message_id=message_id_to_delete)
+                    await context.bot.delete_message(
+                        chat_id=chat_id, message_id=message_id_to_delete)
                     deleted_count += 1
-                    
+
                     # Actualizar progreso cada 100 mensajes para cantidades grandes
                     if count > 100 and deleted_count % 100 == 0:
                         try:
@@ -2654,20 +2758,21 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 f"🗑️ **Eliminados:** {deleted_count:,}/{count:,}\n"
                                 f"📊 **Progreso:** {(deleted_count/count)*100:.1f}%\n"
                                 f"⏳ **Procesando...**",
-                                parse_mode=ParseMode.MARKDOWN
-                            )
+                                parse_mode=ParseMode.MARKDOWN)
                         except:
                             pass
-                    
+
                     # Pausa adaptativa según la cantidad
                     if count > 500:
                         if deleted_count % 50 == 0:
                             await asyncio.sleep(0.1)
                     else:
                         await asyncio.sleep(0.05)  # Pausa muy corta
-                        
+
                 except Exception as e:
-                    logger.warning(f"No se pudo eliminar mensaje {message_id_to_delete}: {e}")
+                    logger.warning(
+                        f"No se pudo eliminar mensaje {message_id_to_delete}: {e}"
+                    )
                     continue
 
         # Eliminar el mensaje de progreso
@@ -2692,7 +2797,8 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cleanup_info_temp += f"⚠️ **Este mensaje se eliminará en 30 segundos**"
 
         # Enviar confirmación temporal
-        confirmation_msg = await context.bot.send_message(chat_id, cleanup_info_temp, parse_mode=ParseMode.MARKDOWN)
+        confirmation_msg = await context.bot.send_message(
+            chat_id, cleanup_info_temp, parse_mode=ParseMode.MARKDOWN)
 
         # Auto-eliminar confirmación después de 30 segundos
         await asyncio.sleep(30)
@@ -2700,7 +2806,7 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await confirmation_msg.delete()
         except:
             pass
-        
+
         # Mensaje de seguridad PERMANENTE
         security_info = "🔐 **REGISTRO DE SEGURIDAD** 🔐\n\n"
         security_info += f"📅 **Fecha/Hora:** {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}\n"
@@ -2713,11 +2819,14 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         security_info += f"📝 **Este registro permanece por temas de seguridad**"
 
         # Enviar registro permanente de seguridad
-        await context.bot.send_message(chat_id, security_info, parse_mode=ParseMode.MARKDOWN)
+        await context.bot.send_message(chat_id,
+                                       security_info,
+                                       parse_mode=ParseMode.MARKDOWN)
 
         # Log para administradores
-        logger.info(f"Limpieza ejecutada - Admin: {admin_info.id} ({admin_info.first_name}) - "
-                   f"Eliminados: {deleted_count}/{count} - Chat: {chat_id}")
+        logger.info(
+            f"Limpieza ejecutada - Admin: {admin_info.id} ({admin_info.first_name}) - "
+            f"Eliminados: {deleted_count}/{count} - Chat: {chat_id}")
 
     except Exception as e:
         logger.error(f"Error en limpieza: {e}")
@@ -2727,8 +2836,7 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
         await context.bot.send_message(
-            chat_id, 
-            f"❌ **ERROR EN LIMPIEZA** ❌\n\n"
+            chat_id, f"❌ **ERROR EN LIMPIEZA** ❌\n\n"
             f"🔍 **Error:** {str(e)[:100]}\n"
             f"📊 **Eliminados:** {deleted_count}/{count}\n\n"
             f"💡 **Verifica que el bot tenga:**\n"
@@ -2766,7 +2874,7 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver información detallada de usuario por ID - Solo admins"""
     args = context.args
-    
+
     # Si se responde a un mensaje, obtener el ID del usuario
     if update.message.reply_to_message and not args:
         target_user_id = str(update.message.reply_to_message.from_user.id)
@@ -2775,14 +2883,15 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_user_id = args[0]
         try:
             # Intentar obtener información del usuario
-            chat_member = await context.bot.get_chat_member(update.effective_chat.id, int(target_user_id))
+            chat_member = await context.bot.get_chat_member(
+                update.effective_chat.id, int(target_user_id))
             target_user = chat_member.user
         except:
             target_user = None
     else:
         await update.message.reply_text(
             "🔍 **INFORMACIÓN DE USUARIO** 🔍\n\n"
-            "**Uso:** `/id [user_id]` o responder a un mensaje\n"
+            "**Uso:** `/id [user_id]`\n"
             "**Ejemplo:** `/id 123456789`\n\n"
             "📋 **Información disponible:**\n"
             "• Datos del usuario\n"
@@ -3039,11 +3148,9 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         # Intentar desbanear del chat actual
-        await context.bot.unban_chat_member(
-            chat_id=update.effective_chat.id,
-            user_id=int(target_user_id),
-            only_if_banned=True
-        )
+        await context.bot.unban_chat_member(chat_id=update.effective_chat.id,
+                                            user_id=int(target_user_id),
+                                            only_if_banned=True)
 
         # Resetear advertencias del usuario
         db.update_user(target_user_id, {'warns': 0})
@@ -3056,7 +3163,8 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response += f"🔄 **Advertencias reseteadas a 0/3**\n"
         response += f"💡 **Acción ejecutada exitosamente**"
 
-        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(response,
+                                        parse_mode=ParseMode.MARKDOWN)
 
     except Exception as e:
         await update.message.reply_text(
@@ -3074,18 +3182,18 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def close_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cerrar bot para mantenimiento - Solo admins"""
     args = context.args
-    maintenance_message = ' '.join(args) if args else "El bot está en mantenimiento. Volveremos pronto."
-    
+    maintenance_message = ' '.join(
+        args) if args else "El bot está en mantenimiento. Volveremos pronto."
+
     db.set_maintenance(True, maintenance_message)
-    
+
     response = f"🔒 **BOT CERRADO PARA MANTENIMIENTO** 🔒\n\n"
     response += f"🚧 **Estado:** Mantenimiento activado\n"
     response += f"💬 **Mensaje:** {maintenance_message}\n"
     response += f"👮‍♂️ **Por:** {update.effective_user.first_name}\n"
     response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-    response += f"⚠️ **Los usuarios no podrán usar comandos hasta que uses `/open`**\n"
-    response += f"✅ **Los administradores pueden seguir usando todos los comandos**"
-    
+    response += f"⚠️ **Los usuarios no podrán usar comandos**\n"
+
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
@@ -3099,25 +3207,26 @@ async def open_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔄 Todos los comandos están funcionando normalmente",
             parse_mode=ParseMode.MARKDOWN)
         return
-    
+
     db.set_maintenance(False, "")
-    
+
     response = f"🔓 **BOT ABIERTO Y OPERATIVO** 🔓\n\n"
     response += f"✅ **Estado:** Bot totalmente funcional\n"
     response += f"🔄 **Todos los comandos están disponibles**\n"
     response += f"👮‍♂️ **Abierto por:** {update.effective_user.first_name}\n"
     response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
     response += f"🎉 **¡Los usuarios ya pueden usar el bot normalmente!**"
-    
+
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
 @admin_only
-async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def housemode_command(update: Update,
+                            context: ContextTypes.DEFAULT_TYPE):
     """Modo casa de seguridad - Solo admins"""
     chat_id = str(update.effective_chat.id)
     args = context.args
-    
+
     if not args:
         await update.message.reply_text(
             "🏠 **MODO CASA (HOUSEMODE)** 🏠\n\n"
@@ -3140,13 +3249,13 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Razón automática si no se proporciona
         if not reason:
             reason = "Administrador ausente - Protección automática contra raids, spam masivo y actividad maliciosa."
-        
+
         db.set_housemode(chat_id, True, reason)
-        
+
         # Restringir el chat - Solo importamos ChatPermissions aquí
         try:
             from telegram import ChatPermissions
-            
+
             # Crear permisos restrictivos - Solo envío de mensajes bloqueado
             restricted_permissions = ChatPermissions(
                 can_send_messages=False,
@@ -3161,14 +3270,12 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 can_add_web_page_previews=False,
                 can_change_info=False,
                 can_invite_users=False,
-                can_pin_messages=False
-            )
-            
+                can_pin_messages=False)
+
             await context.bot.set_chat_permissions(
                 chat_id=update.effective_chat.id,
-                permissions=restricted_permissions
-            )
-            
+                permissions=restricted_permissions)
+
             response = f"🏠 **MODO CASA ACTIVADO** 🏠\n\n"
             response += f"🔒 **Grupo bloqueado temporalmente**\n\n"
             response += f"🛡️ **Medidas de seguridad activas:**\n"
@@ -3180,7 +3287,7 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response += f"👮‍♂️ **Activado por:** {update.effective_user.first_name}\n"
             response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
             response += f"🔓 **Para desactivar usar:** `/housemode off`"
-            
+
         except Exception as e:
             response = f"❌ **ERROR AL ACTIVAR MODO CASA** ❌\n\n"
             response += f"🔍 **Error:** {str(e)}\n"
@@ -3188,11 +3295,11 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif action == "off":
         db.set_housemode(chat_id, False, "")
-        
+
         # Restaurar permisos normales del chat
         try:
             from telegram import ChatPermissions
-            
+
             # Crear permisos normales
             normal_permissions = ChatPermissions(
                 can_send_messages=True,
@@ -3207,14 +3314,12 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 can_add_web_page_previews=True,
                 can_change_info=False,
                 can_invite_users=True,
-                can_pin_messages=False
-            )
-            
+                can_pin_messages=False)
+
             await context.bot.set_chat_permissions(
                 chat_id=update.effective_chat.id,
-                permissions=normal_permissions
-            )
-            
+                permissions=normal_permissions)
+
             response = f"🔓 **MODO CASA DESACTIVADO** 🔓\n\n"
             response += f"✅ **El grupo ha sido desbloqueado**\n"
             response += f"💬 **Los miembros ya pueden enviar mensajes**\n"
@@ -3222,12 +3327,12 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response += f"👮‍♂️ **Desactivado por:** {update.effective_user.first_name}\n"
             response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
             response += f"🛡️ **Supervisión activa restablecida**"
-            
+
         except Exception as e:
             response = f"❌ **ERROR AL DESACTIVAR MODO CASA** ❌\n\n"
             response += f"🔍 **Error:** {str(e)}\n"
             response += f"💡 **Verifica que el bot tenga permisos de administrador**"
-    
+
     else:
         response = f"❌ **Acción inválida**\n\n"
         response += f"**Acciones disponibles:** `on` | `off`"
@@ -3240,7 +3345,7 @@ async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bloqueo total del grupo - Solo admins"""
     chat_id = str(update.effective_chat.id)
     args = context.args
-    
+
     if not args:
         await update.message.reply_text(
             "🔒 **LOCKDOWN TOTAL** 🔒\n\n"
@@ -3256,30 +3361,26 @@ async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     action = args[0].lower()
-    
+
     if action == "on":
         reason = ' '.join(args[1:]) if len(args) > 1 else "Medida de seguridad"
-        
+
         try:
             # Bloqueo total - solo lectura
             from telegram import ChatPermissions
-            
-            permissions = ChatPermissions(
-                can_send_messages=False,
-                can_send_media_messages=False,
-                can_send_polls=False,
-                can_send_other_messages=False,
-                can_add_web_page_previews=False,
-                can_change_info=False,
-                can_invite_users=False,
-                can_pin_messages=False
-            )
-            
+
+            permissions = ChatPermissions(can_send_messages=False,
+                                          can_send_media_messages=False,
+                                          can_send_polls=False,
+                                          can_send_other_messages=False,
+                                          can_add_web_page_previews=False,
+                                          can_change_info=False,
+                                          can_invite_users=False,
+                                          can_pin_messages=False)
+
             await context.bot.set_chat_permissions(
-                chat_id=update.effective_chat.id,
-                permissions=permissions
-            )
-            
+                chat_id=update.effective_chat.id, permissions=permissions)
+
             response = f"🚨 **LOCKDOWN ACTIVADO** 🚨\n\n"
             response += f"🔒 **GRUPO EN MODO SOLO LECTURA**\n\n"
             response += f"⚠️ **MEDIDA DE EMERGENCIA ACTIVADA**\n"
@@ -3288,41 +3389,37 @@ async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response += f"👮‍♂️ **Activado por:** {update.effective_user.first_name}\n"
             response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
             response += f"🔓 **Usa `/lockdown off` para desactivar**"
-            
+
         except Exception as e:
             response = f"❌ **ERROR EN LOCKDOWN:** {str(e)}"
-            
+
     elif action == "off":
         try:
             # Restaurar permisos normales
             from telegram import ChatPermissions
-            
-            permissions = ChatPermissions(
-                can_send_messages=True,
-                can_send_media_messages=True,
-                can_send_polls=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True,
-                can_change_info=False,
-                can_invite_users=True,
-                can_pin_messages=False
-            )
-            
+
+            permissions = ChatPermissions(can_send_messages=True,
+                                          can_send_media_messages=True,
+                                          can_send_polls=True,
+                                          can_send_other_messages=True,
+                                          can_add_web_page_previews=True,
+                                          can_change_info=False,
+                                          can_invite_users=True,
+                                          can_pin_messages=False)
+
             await context.bot.set_chat_permissions(
-                chat_id=update.effective_chat.id,
-                permissions=permissions
-            )
-            
+                chat_id=update.effective_chat.id, permissions=permissions)
+
             response = f"🔓 **LOCKDOWN DESACTIVADO** 🔓\n\n"
             response += f"✅ **Grupo desbloqueado exitosamente**\n"
             response += f"💬 **Miembros pueden enviar mensajes**\n"
             response += f"🔄 **Operaciones normales restauradas**\n\n"
             response += f"👮‍♂️ **Desactivado por:** {update.effective_user.first_name}\n"
             response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-            
+
         except Exception as e:
             response = f"❌ **ERROR AL DESACTIVAR LOCKDOWN:** {str(e)}"
-    
+
     else:
         response = "❌ **Acción inválida.** Usa: `on` o `off`"
 
@@ -3365,7 +3462,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += "• Mayor probabilidad de LIVE\n"
         text += "• Resultados más rápidos\n\n"
         text += "🎯 **Límites:**\n"
-        text += "• Generar hasta 50 tarjetas (vs 20)\n"
         text += "• Direcciones adicionales\n\n"
         text += "💎 **Bonos:**\n"
         text += "• 15 créditos diarios (vs 10)\n"
@@ -3408,14 +3504,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data = db.get_user(user_id)
         is_admin = query.from_user.id in ADMIN_IDS
         is_premium = user_data.get('premium', False)
-        
+
         if is_admin:
             methods_text = "🔥 **TODOS LOS MÉTODOS** (Administrador)"
         elif is_premium:
             methods_text = "👑 **TODOS LOS MÉTODOS** (Premium)"
         else:
             methods_text = "⚡ **5 MÉTODOS** (Usuario estándar)"
-        
+
         text = "💎 **COMANDOS CON COSTO** 💎\n\n"
         text += "🔍 **Verificación `/live`:**\n"
         text += "• 💰 Costo: 3 créditos por uso\n"
@@ -3823,12 +3919,8 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     """Función principal del bot"""
     # Usar ApplicationBuilder con configuración explícita
-    application = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .concurrent_updates(True)
-        .build()
-    )
+    application = (Application.builder().token(BOT_TOKEN).concurrent_updates(
+        True).build())
 
     # Registrar comandos principales
     application.add_handler(CommandHandler("start", start))
@@ -3879,6 +3971,7 @@ def main():
     # Iniciar el bot
     print("✅ Bot iniciado correctamente")
     application.run_polling()
+
 
 if __name__ == "__main__":
     try:
