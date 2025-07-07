@@ -2994,18 +2994,19 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     
     if not args:
-        await update.message.reply_text(
-            "🏠 **MODO CASA (HOUSEMODE)** 🏠\n\n"
-            "**Uso:** `/housemode [on/off] [razón]`\n\n"
-            "**Funciones:**\n"
-            "• Bloquea temporalmente el grupo\n"
-            "• Solo admins pueden enviar mensajes\n"
-            "• Protege contra spam y raids\n"
-            "• Medida preventiva de seguridad\n\n"
-            "**Ejemplos:**\n"
-            "• `/housemode on Supervisión activa`\n"
-            "• `/housemode off`",
-            parse_mode=ParseMode.MARKDOWN)
+        response = "🏠 MODO CASA (HOUSEMODE) 🏠\n\n"
+        response += "Uso: /housemode [on/off] [razón]\n\n"
+        response += "Funciones:\n"
+        response += "• Bloquea temporalmente el grupo\n"
+        response += "• Solo admins pueden enviar mensajes\n"
+        response += "• Protege contra spam y raids\n"
+        response += "• Medida preventiva de seguridad\n\n"
+        response += "Ejemplos:\n"
+        response += "• /housemode on Supervisión activa\n"
+        response += "• /housemode off\n\n"
+        response += "⚠️ Requisito: El bot debe ser administrador del grupo"
+        
+        await update.message.reply_text(response)
         return
 
     action = args[0].lower()
@@ -3014,17 +3015,47 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "on":
         # Razón automática mejorada si no se proporciona
         if not reason:
-            reason = "Administrador ausente - Protección automática contra raids, spam masivo y actividad maliciosa. Medida de seguridad preventiva activada."
+            reason = "Administrador ausente - Protección automática contra raids, spam masivo y actividad maliciosa."
+        
+        # Verificar primero si el bot es administrador
+        try:
+            bot_member = await context.bot.get_chat_member(update.effective_chat.id, context.bot.id)
+            if bot_member.status not in ['administrator', 'creator']:
+                await update.message.reply_text(
+                    "❌ BOT NO ES ADMINISTRADOR ❌\n\n"
+                    "🔧 Para activar modo casa necesitas:\n"
+                    "1. Hacer al bot administrador del grupo\n"
+                    "2. Darle permisos para 'Restringir miembros'\n"
+                    "3. Darle permisos para 'Eliminar mensajes'\n\n"
+                    "💡 Cómo hacer al bot admin:\n"
+                    "• Ve a Info del grupo\n"
+                    "• Toca en 'Administradores'\n"
+                    "• Toca 'Agregar administrador'\n"
+                    "• Busca @ChernobilChLv_bot\n"
+                    "• Activa 'Restringir miembros'")
+                return
+        except Exception as e:
+            await update.message.reply_text(
+                "❌ ERROR DE VERIFICACIÓN ❌\n\n"
+                "🔍 No se pudo verificar permisos del bot\n"
+                "💡 Asegúrate de que el bot sea administrador")
+            return
         
         db.set_housemode(chat_id, True, reason)
         
-        # Restringir el chat
+        # Restringir el chat con permisos más básicos
         try:
             from telegram import ChatPermissions
             
-            permissions = ChatPermissions(
+            # Permisos más restrictivos y compatibles con la API actual
+            restricted_permissions = ChatPermissions(
                 can_send_messages=False,
-                can_send_media_messages=False,
+                can_send_audios=False,
+                can_send_documents=False,
+                can_send_photos=False,
+                can_send_videos=False,
+                can_send_video_notes=False,
+                can_send_voice_notes=False,
                 can_send_polls=False,
                 can_send_other_messages=False,
                 can_add_web_page_previews=False,
@@ -3035,26 +3066,38 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await context.bot.set_chat_permissions(
                 chat_id=update.effective_chat.id,
-                permissions=permissions
+                permissions=restricted_permissions
             )
             
-            response = f"🏠 **MODO CASA ACTIVADO** 🏠\n\n"
-            response += f"🔒 **Grupo bloqueado temporalmente por ausencia administrativa**\n\n"
-            response += f"🛡️ **Medida de seguridad activada para prevenir:**\n"
-            response += f"• Raids masivos y ataques coordinados\n"
-            response += f"• Spam excesivo de enlaces y contenido\n"
-            response += f"• Actividad maliciosa durante supervisión limitada\n"
-            response += f"• Violaciones de normas en ausencia de moderación\n\n"
-            response += f"⚠️ **Durante este período solo administradores pueden escribir**\n\n"
-            response += f"📝 **Razón específica:** {reason}\n\n"
-            response += f"👮‍♂️ **Activado por:** {update.effective_user.first_name}\n"
-            response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            response += f"🔓 **Un administrador puede desactivar con `/housemode off`**"
+            response = "🏠 MODO CASA ACTIVADO 🏠\n\n"
+            response += "🔒 Grupo bloqueado temporalmente\n\n"
+            response += "🛡️ Medidas de seguridad activas:\n"
+            response += "• ❌ Usuarios normales no pueden escribir\n"
+            response += "• ✅ Solo administradores pueden enviar mensajes\n"
+            response += "• 🚫 Prevención contra raids y spam\n"
+            response += "• 🔐 Protección durante ausencia administrativa\n\n"
+            response += f"📝 Razón: {reason}\n\n"
+            response += f"👮‍♂️ Activado por: {update.effective_user.first_name}\n"
+            response += f"⏰ Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            response += "🔓 Para desactivar: /housemode off"
             
         except Exception as e:
-            response = f"❌ **ERROR AL ACTIVAR MODO CASA**\n\n"
-            response += f"🔍 **Error:** {str(e)}\n"
-            response += f"💡 **Verifica que el bot tenga permisos de administrador**"
+            error_msg = str(e)
+            if "rights" in error_msg.lower():
+                response = "❌ PERMISOS INSUFICIENTES ❌\n\n"
+                response += "🔧 El bot necesita estos permisos:\n"
+                response += "• ✅ Ser administrador del grupo\n"
+                response += "• ✅ Permiso 'Restringir miembros'\n"
+                response += "• ✅ Permiso 'Eliminar mensajes'\n\n"
+                response += "💡 Solución:\n"
+                response += "1. Ve a configuración del grupo\n"
+                response += "2. Busca al bot en administradores\n"
+                response += "3. Activa 'Restringir miembros'\n"
+                response += "4. Intenta el comando nuevamente"
+            else:
+                response = f"❌ ERROR AL ACTIVAR MODO CASA ❌\n\n"
+                response += f"🔍 Error: {error_msg[:100]}\n"
+                response += f"💡 Contacta a un administrador para revisión"
 
     elif action == "off":
         db.set_housemode(chat_id, False, "")
@@ -3063,9 +3106,15 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             from telegram import ChatPermissions
             
-            permissions = ChatPermissions(
+            # Restaurar permisos normales
+            normal_permissions = ChatPermissions(
                 can_send_messages=True,
-                can_send_media_messages=True,
+                can_send_audios=True,
+                can_send_documents=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=True,
+                can_send_voice_notes=True,
                 can_send_polls=True,
                 can_send_other_messages=True,
                 can_add_web_page_previews=True,
@@ -3076,27 +3125,37 @@ async def housemode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await context.bot.set_chat_permissions(
                 chat_id=update.effective_chat.id,
-                permissions=permissions
+                permissions=normal_permissions
             )
             
-            response = f"🔓 **MODO CASA DESACTIVADO** 🔓\n\n"
-            response += f"✅ **El grupo ha sido desbloqueado**\n"
-            response += f"💬 **Los miembros ya pueden enviar mensajes**\n"
-            response += f"🔄 **Funciones normales del grupo restauradas**\n\n"
-            response += f"👮‍♂️ **Desactivado por:** {update.effective_user.first_name}\n"
-            response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            response += f"🛡️ **Supervisión activa restablecida**"
+            response = "🔓 MODO CASA DESACTIVADO 🔓\n\n"
+            response += "✅ Grupo desbloqueado exitosamente\n"
+            response += "💬 Los miembros ya pueden enviar mensajes\n"
+            response += "🔄 Funciones normales del grupo restauradas\n\n"
+            response += f"👮‍♂️ Desactivado por: {update.effective_user.first_name}\n"
+            response += f"⏰ Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            response += "🛡️ Supervisión activa restablecida"
             
         except Exception as e:
-            response = f"❌ **ERROR AL DESACTIVAR MODO CASA**\n\n"
-            response += f"🔍 **Error:** {str(e)}\n"
-            response += f"💡 **Verifica que el bot tenga permisos de administrador**"
+            error_msg = str(e)
+            if "rights" in error_msg.lower():
+                response = "❌ PERMISOS INSUFICIENTES PARA DESACTIVAR ❌\n\n"
+                response += "🔧 El bot necesita permisos de administrador\n"
+                response += "💡 Verifica que el bot tenga 'Restringir miembros'\n\n"
+                response += "⚠️ El modo casa sigue activo hasta resolver permisos"
+            else:
+                response = f"❌ ERROR AL DESACTIVAR MODO CASA ❌\n\n"
+                response += f"🔍 Error: {error_msg[:100]}\n"
+                response += f"💡 Contacta a un administrador para revisión"
     
     else:
-        response = f"❌ **Acción inválida**\n\n"
-        response += f"**Acciones disponibles:** `on` | `off`"
+        response = "❌ Acción inválida ❌\n\n"
+        response += "Acciones disponibles: on | off\n\n"
+        response += "Ejemplos:\n"
+        response += "• /housemode on\n"
+        response += "• /housemode off"
 
-    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(response)
 
 
 @admin_only
@@ -3130,7 +3189,12 @@ async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             permissions = ChatPermissions(
                 can_send_messages=False,
-                can_send_media_messages=False,
+                can_send_audios=False,
+                can_send_documents=False,
+                can_send_photos=False,
+                can_send_videos=False,
+                can_send_video_notes=False,
+                can_send_voice_notes=False,
                 can_send_polls=False,
                 can_send_other_messages=False,
                 can_add_web_page_previews=False,
@@ -3163,7 +3227,12 @@ async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             permissions = ChatPermissions(
                 can_send_messages=True,
-                can_send_media_messages=True,
+                can_send_audios=True,
+                can_send_documents=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=True,
+                can_send_voice_notes=True,
                 can_send_polls=True,
                 can_send_other_messages=True,
                 can_add_web_page_previews=True,
@@ -3686,11 +3755,15 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Función principal
 def main():
     """Función principal del bot"""
-    # Usar ApplicationBuilder con configuración explícita
+    # Usar ApplicationBuilder con configuración más robusta
     application = (
         Application.builder()
         .token(BOT_TOKEN)
         .concurrent_updates(True)
+        .read_timeout(30)
+        .write_timeout(30)
+        .connect_timeout(30)
+        .pool_timeout(30)
         .build()
     )
 
@@ -3742,15 +3815,24 @@ def main():
 
     # Iniciar el bot
     print("✅ Bot iniciado correctamente")
-    application.run_polling()
+    try:
+        application.run_polling(
+            poll_interval=1.0,
+            timeout=20,
+            bootstrap_retries=5,
+            read_timeout=30,
+            write_timeout=30,
+            connect_timeout=30,
+            pool_timeout=30
+        )
+    except Exception as e:
+        logger.error(f"Error en polling: {e}")
+        application.stop()
+        raise
 
 if __name__ == "__main__":
     try:
-        # Importar e iniciar keep_alive para UptimeRobot
-        from keep_alive import keep_alive
-        keep_alive()
-
-        # Iniciar el bot
+        # Iniciar el bot directamente sin keep_alive
         main()
     except Exception as e:
         logger.error(f"Error crítico al iniciar el bot: {e}")
