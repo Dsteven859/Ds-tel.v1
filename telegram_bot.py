@@ -1609,8 +1609,7 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_methods = all_api_methods  # Todos los métodos
         methods_text = f"⚡ Usando {len(api_methods)} APIs simultáneas (TODOS los métodos)"
     else:
-        api_methods = all_api_methods[:
-                                      5]  # Solo 5 métodos para usuarios estándar
+        api_methods = all_api_methods[:5]  # Solo 5 métodos para usuarios estándar
         methods_text = f"⚡ Usando {len(api_methods)} APIs simultáneas (métodos estándar)"
 
     # Mensaje inicial mejorado - diferente para 1 tarjeta vs múltiples
@@ -1632,8 +1631,7 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Actualizar barra de progreso SOLO si hay más de 1 tarjeta
         if total_cards > 1:
             progress = (card_index + 1) / total_cards * 100
-            progress_bar = "█" * int(
-                progress // 10) + "░" * (10 - int(progress // 10))
+            progress_bar = "█" * int(progress // 10) + "░" * (10 - int(progress // 10))
 
             try:
                 await progress_msg.edit_text(
@@ -1652,61 +1650,87 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_name, api_method = selected_api
 
         # Simular tiempo de verificación realista
-        await asyncio.sleep(random.uniform(1.0, 2.0))
+        import time
+        time.sleep(random.uniform(1.0, 2.0))
 
-        is_live, status, gateways, charge_amount, card_level = api_method(
-            card_data)
+        is_live, status, gateways, charge_amount, card_level = api_method(card_data)
+
+        # Obtener información del BIN para la tarjeta individual
+        bin_number = parts[0][:6]
+        bin_info = await get_real_bin_info(bin_number)
 
         results.append({
-            'card_data':
-            card_data,
-            'parts':
-            parts,
-            'is_live':
-            is_live,
-            'api':
-            api_name,
-            'status':
-            "LIVE ✅" if is_live else "DEAD ❌",
-            'result':
-            random.choice([
+            'card_data': card_data,
+            'parts': parts,
+            'is_live': is_live,
+            'api': api_name,
+            'status': "LIVE ✅" if is_live else "DEAD ❌",
+            'result': random.choice([
                 "Approved", "CVV Match", "Charged $1.00", "Transaction Success"
             ]) if is_live else random.choice([
                 "Declined", "Insufficient Funds", "Expired Card",
                 "Invalid CVV", "Call Voice Center(01)"
             ]),
-            'index':
-            card_index + 1
+            'index': card_index + 1,
+            'bin_info': bin_info
         })
 
-    # Resultado final con formato mejorado
-    final_response = "『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』\n\n"
+    # Formato especial para UNA SOLA tarjeta
+    if total_cards == 1:
+        result = results[0]
+        
+        # Mapeo de países con banderas
+        country_flags = {
+            'UNITED STATES': '🇺🇸', 'CANADA': '🇨🇦', 'UNITED KINGDOM': '🇬🇧',
+            'GERMANY': '🇩🇪', 'FRANCE': '🇫🇷', 'SPAIN': '🇪🇸', 'ITALY': '🇮🇹',
+            'BRAZIL': '🇧🇷', 'MEXICO': '🇲🇽', 'ARGENTINA': '🇦🇷', 'COLOMBIA': '🇨🇴',
+            'CHILE': '🇨🇱', 'PERU': '🇵🇪', 'ECUADOR': '🇪🇨', 'VENEZUELA': '🇻🇪',
+            'AUSTRALIA': '🇦🇺', 'JAPAN': '🇯🇵', 'SOUTH KOREA': '🇰🇷', 'CHINA': '🇨🇳',
+            'INDIA': '🇮🇳', 'RUSSIA': '🇷🇺', 'TURKEY': '🇹🇷', 'ISRAEL': '🇮🇱'
+        }
+        
+        country_name = result['bin_info']['country'].upper()
+        country_flag = country_flags.get(country_name, '🌍')
+        
+        final_response = "『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』\n"
+        final_response += f"[] 𝗖𝗮𝗿𝗱 ༄{result['parts'][0]} | {result['parts'][1]} | {result['parts'][2]} | {result['parts'][3]}\n"
+        final_response += f"┆ ⊱ ┆𝗦𝘁𝗮𝘁𝘂𝘀 ༄ {result['status']}\n"
+        final_response += f"┆ ⊱ ┆𝗥𝗲𝘀𝘂𝗹𝘁 ༄ {result['result']}\n"
+        final_response += f"┆ ⊱ ┆𝗚𝗮𝘁𝗲𝘄𝗮𝘆 ༄ {result['api']} 🌐\n"
+        final_response += f"───────── 𝗗𝗘𝗧𝗔𝗜𝗟𝗦 ────────\n"
+        final_response += f"┆ ⊱ ┆ 𝗕𝗜𝗡 ༄ {result['parts'][0][:6]}\n"
+        final_response += f"┆ ⊱ ┆ 𝗕𝗮𝗻𝗸 ༄ {result['bin_info']['bank']}\n"
+        final_response += f"┆ ⊱ ┆𝗖𝗼𝘂𝗻𝘁𝗿𝘆 ༄ {result['bin_info']['country']} {country_flag} - 💲USD\n"
+        final_response += f"────────── 𝗜𝗡𝗙𝗢 ──────────\n"
+        final_response += f"┆ ⊱ ┆𝗧𝗶𝗺𝗲 ༄ {datetime.now().strftime('%H:%M:%S')} ⌛\n"
+        final_response += f"┆ ⊱ ┆ 𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗕𝘆 ༄ @{update.effective_user.username or update.effective_user.first_name} 👤\n"
+        final_response += f"┆ ⊱ ┆𝗕𝗼𝘁 ༄ @ChernobilChLv_bot"
+        
+    else:
+        # Formato original para múltiples tarjetas
+        final_response = "『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』\n\n"
 
-    for result in results:
-        final_response += f"[{result['index']}] {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
-        final_response += f"┆ ⊱ ┆Status: {result['status']}\n"
-        final_response += f"┆ ⊱ ┆Result: {result['result']}\n"
-        final_response += f"┆ ⊱ ┆Gateway: {result['api']}\n"
-        final_response += f"┆ ⊱ ┆Time: {datetime.now().strftime('%H:%M:%S')} ⌛\n"
-        final_response += f"┆ ⊱ ┆Checked by: {update.effective_user.first_name} 👤\n"
-        final_response += f"┆ ⊱ ┆Bot: @ChernobilChLv_bot\n\n"
+        for result in results:
+            final_response += f"[{result['index']}] {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
+            final_response += f"┆ ⊱ ┆Status: {result['status']}\n"
+            final_response += f"┆ ⊱ ┆Result: {result['result']}\n"
+            final_response += f"┆ ⊱ ┆Gateway: {result['api']}\n"
+            final_response += f"┆ ⊱ ┆Time: {datetime.now().strftime('%H:%M:%S')} ⌛\n"
+            final_response += f"┆ ⊱ ┆Checked by: {update.effective_user.first_name} 👤\n"
+            final_response += f"┆ ⊱ ┆Bot: @ChernobilChLv_bot\n\n"
 
-    # Estadísticas finales
-    live_count = sum(1 for r in results if r['is_live'])
-    final_response += f"🔥 **Resultado:** {live_count}/{total_cards} LIVE\n"
-    final_response += f"⚡ **Efectividad:** {(live_count/total_cards)*100:.1f}%"
+        # Estadísticas finales
+        live_count = sum(1 for r in results if r['is_live'])
+        final_response += f"🔥 **Resultado:** {live_count}/{total_cards} LIVE\n"
+        final_response += f"⚡ **Efectividad:** {(live_count/total_cards)*100:.1f}%"
 
     # Actualizar estadísticas
-    db.update_user(
-        user_id,
-        {'total_checked': user_data['total_checked'] + len(cards_list)})
+    db.update_user(user_id, {'total_checked': user_data['total_checked'] + len(cards_list)})
 
     try:
-        await progress_msg.edit_text(final_response,
-                                     parse_mode=ParseMode.MARKDOWN)
+        await progress_msg.edit_text(final_response, parse_mode=ParseMode.MARKDOWN)
     except:
-        await update.message.reply_text(final_response,
-                                        parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(final_response, parse_mode=ParseMode.MARKDOWN)
 
 
 async def direccion_command(update: Update,
