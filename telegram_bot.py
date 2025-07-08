@@ -1675,51 +1675,20 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'bin_info': bin_info
         })
 
-    # Formato especial para UNA SOLA tarjeta
-    if total_cards == 1:
-        result = results[0]
-        
-        # Mapeo de países con banderas
-        country_flags = {
-            'UNITED STATES': '🇺🇸', 'CANADA': '🇨🇦', 'UNITED KINGDOM': '🇬🇧',
-            'GERMANY': '🇩🇪', 'FRANCE': '🇫🇷', 'SPAIN': '🇪🇸', 'ITALY': '🇮🇹',
-            'BRAZIL': '🇧🇷', 'MEXICO': '🇲🇽', 'ARGENTINA': '🇦🇷', 'COLOMBIA': '🇨🇴',
-            'CHILE': '🇨🇱', 'PERU': '🇵🇪', 'ECUADOR': '🇪🇨', 'VENEZUELA': '🇻🇪',
-            'AUSTRALIA': '🇦🇺', 'JAPAN': '🇯🇵', 'SOUTH KOREA': '🇰🇷', 'CHINA': '🇨🇳',
-            'INDIA': '🇮🇳', 'RUSSIA': '🇷🇺', 'TURKEY': '🇹🇷', 'ISRAEL': '🇮🇱'
-        }
-        
-        country_name = result['bin_info']['country'].upper()
-        country_flag = country_flags.get(country_name, '🌍')
-        
-        final_response = "『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』\n"
-        final_response += f"[] 𝗖𝗮𝗿𝗱 ༄{result['parts'][0]} | {result['parts'][1]} | {result['parts'][2]} | {result['parts'][3]}\n"
-        final_response += f"┆ ⊱ ┆𝗦𝘁𝗮𝘁𝘂𝘀 ༄ {result['status']}\n"
-        final_response += f"┆ ⊱ ┆𝗥𝗲𝘀𝘂𝗹𝘁 ༄ {result['result']}\n"
-        final_response += f"┆ ⊱ ┆𝗚𝗮𝘁𝗲𝘄𝗮𝘆 ༄ {result['api']} 🌐\n"
-        final_response += f"───────── 𝗗𝗘𝗧𝗔𝗜𝗟𝗦 ────────\n"
-        final_response += f"┆ ⊱ ┆ 𝗕𝗜𝗡 ༄ {result['parts'][0][:6]}\n"
-        final_response += f"┆ ⊱ ┆ 𝗕𝗮𝗻𝗸 ༄ {result['bin_info']['bank']}\n"
-        final_response += f"┆ ⊱ ┆𝗖𝗼𝘂𝗻𝘁𝗿𝘆 ༄ {result['bin_info']['country']} {country_flag} - 💲USD\n"
-        final_response += f"────────── 𝗜𝗡𝗙𝗢 ──────────\n"
-        final_response += f"┆ ⊱ ┆𝗧𝗶𝗺𝗲 ༄ {datetime.now().strftime('%H:%M:%S')} ⌛\n"
-        final_response += f"┆ ⊱ ┆ 𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗕𝘆 ༄ @{update.effective_user.username or update.effective_user.first_name} 👤\n"
-        final_response += f"┆ ⊱ ┆𝗕𝗼𝘁 ༄ @ChernobilChLv_bot"
-        
-    else:
-        # Formato original para múltiples tarjetas
-        final_response = "『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』\n\n"
+    # Usar el formato solicitado para TODAS las tarjetas
+    final_response = ""
+    
+    for result in results:
+        final_response += f"[{result['index']}] {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
+        final_response += f"┆ ⊱ ┆Status: {result['status']}\n"
+        final_response += f"┆ ⊱ ┆Result: {result['result']}\n"
+        final_response += f"┆ ⊱ ┆Gateway: {result['api']}\n"
+        final_response += f"┆ ⊱ ┆Time: {datetime.now().strftime('%H:%M:%S')}\n"
+        final_response += f"┆ ⊱ ┆Checked by: @{update.effective_user.username or update.effective_user.first_name}\n"
+        final_response += f"┆ ⊱ ┆Bot: @ChernobilChLv_bot\n\n"
 
-        for result in results:
-            final_response += f"[{result['index']}] {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
-            final_response += f"┆ ⊱ ┆Status: {result['status']}\n"
-            final_response += f"┆ ⊱ ┆Result: {result['result']}\n"
-            final_response += f"┆ ⊱ ┆Gateway: {result['api']}\n"
-            final_response += f"┆ ⊱ ┆Time: {datetime.now().strftime('%H:%M:%S')} ⌛\n"
-            final_response += f"┆ ⊱ ┆Checked by: {update.effective_user.first_name} 👤\n"
-            final_response += f"┆ ⊱ ┆Bot: @ChernobilChLv_bot\n\n"
-
-        # Estadísticas finales
+    # Estadísticas finales solo si hay múltiples tarjetas
+    if total_cards > 1:
         live_count = sum(1 for r in results if r['is_live'])
         final_response += f"🔥 **Resultado:** {live_count}/{total_cards} LIVE\n"
         final_response += f"⚡ **Efectividad:** {(live_count/total_cards)*100:.1f}%"
@@ -3942,9 +3911,14 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Función principal
 def main():
     """Función principal del bot"""
-    # Usar ApplicationBuilder con configuración explícita
-    application = (Application.builder().token(BOT_TOKEN).concurrent_updates(
-        True).build())
+    # Configuración del bot para evitar conflictos
+    application = (Application.builder()
+                   .token(BOT_TOKEN)
+                   .concurrent_updates(False)  # Cambiar a False para evitar conflictos
+                   .connect_timeout(30)
+                   .read_timeout(30)
+                   .write_timeout(30)
+                   .build())
 
     # Registrar comandos principales
     application.add_handler(CommandHandler("start", start))
@@ -3992,9 +3966,17 @@ def main():
     # Manejador de errores
     application.add_error_handler(error_handler)
 
-    # Iniciar el bot
+    # Iniciar el bot con manejo de errores mejorado
     print("✅ Bot iniciado correctamente")
-    application.run_polling()
+    try:
+        application.run_polling(
+            drop_pending_updates=True,  # Limpiar actualizaciones pendientes
+            close_loop=False
+        )
+    except Exception as e:
+        logger.error(f"Error en polling: {e}")
+        print(f"❌ Error en el bot: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
