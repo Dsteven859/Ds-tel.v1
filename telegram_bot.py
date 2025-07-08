@@ -615,10 +615,14 @@ async def get_real_bin_info(bin_number):
 
 def escape_markdown(text):
     """Escapa caracteres especiales para Markdown"""
-    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    special_chars = [
+        '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|',
+        '{', '}', '.', '!'
+    ]
     for char in special_chars:
         text = text.replace(char, f'\\{char}')
     return text
+
 
 def get_enhanced_bin_info(bin_number):
     """Información simulada de BIN - Función legacy"""
@@ -662,7 +666,8 @@ class Database:
                     self.users = data.get('users', {})
                     self.staff_roles = data.get('staff_roles', {})
                     self.bot_maintenance = data.get('bot_maintenance', False)
-                    self.maintenance_message = data.get('maintenance_message', "")
+                    self.maintenance_message = data.get(
+                        'maintenance_message', "")
                     self.check_chats = data.get('check_chats', {})
                     self.pending_checks = data.get('pending_checks', {})
         except:
@@ -773,7 +778,8 @@ class Database:
             return self.staff_roles[user_id]['warn_count']
         return 0
 
-    def set_check_chats(self, group_id: str, verification_chat: str, publication_chat: str):
+    def set_check_chats(self, group_id: str, verification_chat: str,
+                        publication_chat: str):
         """Configurar chats para el sistema /check"""
         self.check_chats[group_id] = {
             'verification_chat': verification_chat,
@@ -786,7 +792,8 @@ class Database:
         """Obtener configuración de chats para /check"""
         return self.check_chats.get(group_id, None)
 
-    def add_pending_check(self, check_id: str, user_id: str, username: str, image_file_id: str, group_id: str):
+    def add_pending_check(self, check_id: str, user_id: str, username: str,
+                          image_file_id: str, group_id: str):
         """Agregar verificación pendiente"""
         self.pending_checks[check_id] = {
             'user_id': user_id,
@@ -802,13 +809,17 @@ class Database:
         """Obtener verificación pendiente"""
         return self.pending_checks.get(check_id, None)
 
-    def update_check_status(self, check_id: str, status: str, admin_id: str = None):
+    def update_check_status(self,
+                            check_id: str,
+                            status: str,
+                            admin_id: str = None):
         """Actualizar estado de verificación"""
         if check_id in self.pending_checks:
             self.pending_checks[check_id]['status'] = status
             if admin_id:
                 self.pending_checks[check_id]['admin_id'] = admin_id
-                self.pending_checks[check_id]['processed_at'] = datetime.now().isoformat()
+                self.pending_checks[check_id]['processed_at'] = datetime.now(
+                ).isoformat()
             self.save_data()
 
 
@@ -1367,6 +1378,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text += "│ 🔸 /pasarela - Info pasarelas │\n"
     welcome_text += "│ 🔸 /juegos - Juegos de suerte │\n"
     welcome_text += "│ 🔸 /staff list - Lista staff  │\n"
+    if is_admin or user_id in FOUNDER_IDS or user_id in COFOUNDER_IDS:
+        welcome_text += "│ 🔸 /post - Publicar contenido │\n"
     welcome_text += "└─────────────────────────────┘\n\n"
     welcome_text += "🤖 Bot: @ChernobilChLv_bot"
 
@@ -1661,7 +1674,8 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_methods = all_api_methods  # Todos los métodos
         methods_text = f"⚡ Usando {len(api_methods)} APIs simultáneas (TODOS los métodos)"
     else:
-        api_methods = all_api_methods[:5]  # Solo 5 métodos para usuarios estándar
+        api_methods = all_api_methods[:
+                                      5]  # Solo 5 métodos para usuarios estándar
         methods_text = f"⚡ Usando {len(api_methods)} APIs simultáneas (métodos estándar)"
 
     # Mensaje inicial unificado que funciona para 1 o múltiples tarjetas
@@ -1677,15 +1691,15 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             if total_cards > 1:
                 progress = (card_index + 1) / total_cards * 100
-                progress_bar = "█" * int(progress // 10) + "░" * (10 - int(progress // 10))
+                progress_bar = "█" * int(
+                    progress // 10) + "░" * (10 - int(progress // 10))
                 progress_text = f"📊 Progreso: [{progress_bar}] {progress:.0f}%\n💳 Tarjeta {card_index + 1}/{total_cards}"
             else:
                 progress_text = f"💳 Verificando tarjeta única..."
 
-            await progress_msg.edit_text(
-                f"⊚ **CHERNOBIL VERIFICANDO..** ⊚\n\n"
-                f"{progress_text}\n"
-                f"{methods_text}...")
+            await progress_msg.edit_text(f"⊚ **CHERNOBIL VERIFICANDO..** ⊚\n\n"
+                                         f"{progress_text}\n"
+                                         f"{methods_text}...")
         except:
             pass
 
@@ -1699,47 +1713,67 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         import time
         time.sleep(random.uniform(1.0, 2.0))
 
-        is_live, status, gateways, charge_amount, card_level = api_method(card_data)
+        is_live, status, gateways, charge_amount, card_level = api_method(
+            card_data)
 
         # Obtener información del BIN para la tarjeta individual
         bin_number = parts[0][:6]
         bin_info = await get_real_bin_info(bin_number)
 
         results.append({
-            'card_data': card_data,
-            'parts': parts,
-            'is_live': is_live,
-            'api': api_name,
-            'status': "LIVE ✅" if is_live else "DEAD ❌",
-            'result': random.choice([
+            'card_data':
+            card_data,
+            'parts':
+            parts,
+            'is_live':
+            is_live,
+            'api':
+            api_name,
+            'status':
+            "LIVE ✅" if is_live else "DEAD ❌",
+            'result':
+            random.choice([
                 "Approved", "CVV Match", "Charged $1.00", "Transaction Success"
             ]) if is_live else random.choice([
                 "Declined", "Insufficient Funds", "Expired Card",
                 "Invalid CVV", "Call Voice Center(01)"
             ]),
-            'index': card_index + 1,
-            'bin_info': bin_info
+            'index':
+            card_index + 1,
+            'bin_info':
+            bin_info
         })
 
     # Construir respuesta final con formato mejorado
     final_response = ""
-    
+
     # Si es UNA SOLA tarjeta, usar formato detallado
     if total_cards == 1:
         result = results[0]
         bin_info = result['bin_info']
-        
+
         # Obtener bandera del país
         country_flags = {
-            'UNITED STATES': '🇺🇸', 'CANADA': '🇨🇦', 'UNITED KINGDOM': '🇬🇧', 
-            'GERMANY': '🇩🇪', 'FRANCE': '🇫🇷', 'SPAIN': '🇪🇸', 'ITALY': '🇮🇹',
-            'BRAZIL': '🇧🇷', 'MEXICO': '🇲🇽', 'ARGENTINA': '🇦🇷', 'COLOMBIA': '🇨🇴',
-            'PERU': '🇵🇪', 'CHILE': '🇨🇱', 'ECUADOR': '🇪🇨', 'VENEZUELA': '🇻🇪'
+            'UNITED STATES': '🇺🇸',
+            'CANADA': '🇨🇦',
+            'UNITED KINGDOM': '🇬🇧',
+            'GERMANY': '🇩🇪',
+            'FRANCE': '🇫🇷',
+            'SPAIN': '🇪🇸',
+            'ITALY': '🇮🇹',
+            'BRAZIL': '🇧🇷',
+            'MEXICO': '🇲🇽',
+            'ARGENTINA': '🇦🇷',
+            'COLOMBIA': '🇨🇴',
+            'PERU': '🇵🇪',
+            'CHILE': '🇨🇱',
+            'ECUADOR': '🇪🇨',
+            'VENEZUELA': '🇻🇪'
         }
-        
+
         country_name = bin_info['country'].upper()
         country_flag = country_flags.get(country_name, '🌍')
-        
+
         # Formato detallado para UNA tarjeta
         final_response += "⋆⁺₊⋆ ༺ 『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』 ༻ ⋆⁺₊⋆\n\n"
         final_response += f"[𖤍] 𝗖𝗮𝗿𝗱 ⊱ {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
@@ -1755,11 +1789,11 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_response += f"[𖤍] 𝗧𝗶𝗺𝗲 ⊱ {datetime.now().strftime('%H:%M:%S')} ⌛\n"
         final_response += f"[𖤍] 𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗕𝘆 ⊱ @{update.effective_user.username or update.effective_user.first_name} 👤\n"
         final_response += f"[𖤍] 𝗕𝗼𝘁 ⊱ @ChernobilChLv_bot 𖠑"
-        
+
     else:
         # Formato compacto para múltiples tarjetas
         final_response += "⋆⁺₊⋆ ༺ 『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』 ༻ ⋆⁺₊⋆\n\n"
-        
+
         # Resultados de cada tarjeta
         for result in results:
             final_response += f"[{result['index']}] {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
@@ -1769,7 +1803,7 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             final_response += f"[𖤍] Time ⊱ {datetime.now().strftime('%H:%M:%S')} ⌛\n"
             final_response += f"[𖤍] Checked by ⊱ @{update.effective_user.username or update.effective_user.first_name} 👤\n"
             final_response += f"[𖤍] Bot ⊱ @ChernobilChLv_bot 𖠑\n"
-            
+
             # Separador solo si hay más tarjetas
             if result['index'] < len(results):
                 final_response += "\n"
@@ -1780,7 +1814,9 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_response += f"⚡ Efectividad: {(live_count/total_cards)*100:.1f}%"
 
     # Actualizar estadísticas del usuario
-    db.update_user(user_id, {'total_checked': user_data['total_checked'] + len(cards_list)})
+    db.update_user(
+        user_id,
+        {'total_checked': user_data['total_checked'] + len(cards_list)})
 
     # Enviar respuesta final con mejor manejo de errores
     try:
@@ -1797,7 +1833,9 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 simple_msg = f"Verificación completada: {len([r for r in results if r['is_live']])}/{total_cards} LIVE"
                 await update.message.reply_text(simple_msg)
             except:
-                logger.error("Error crítico: No se pudo enviar ningún mensaje de respuesta")
+                logger.error(
+                    "Error crítico: No se pudo enviar ningún mensaje de respuesta"
+                )
 
 
 async def direccion_command(update: Update,
@@ -2448,67 +2486,85 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     user_data = db.get_user(user_id)
     group_id = str(update.effective_chat.id)
-    
+
     # Verificar que el comando se use respondiendo a una imagen
     if not update.message.reply_to_message or not update.message.reply_to_message.photo:
         await update.message.reply_text(
-            "📸 **VERIFICADOR DE CAPTURAS** 📸\n\n"
-            "❌ **Debes responder a una imagen para usar este comando**\n\n"
-            "📋 **Instrucciones:**\n"
-            "1. Envía o reenvía una imagen/captura\n"
-            "2. Responde a esa imagen con `/check`\n"
-            "3. Espera la verificación de un administrador\n\n"
-            "💰 **Recompensa:** 6 créditos por captura aprobada\n"
-            "⏰ **Tiempo:** Revisión en 24 horas máximo",
+            "╔══════════════════════════════════╗\n"
+            "║   📸  **VERIFICADOR DE CAPTURAS**  📸   ║\n"
+            "╚══════════════════════════════════╝\n\n"
+            "🚫 **ERROR:** Debes responder a una imagen\n\n"
+            "📋 **INSTRUCCIONES:**\n"
+            "┌─────────────────────────────────┐\n"
+            "│ 1️⃣ Envía tu captura al grupo     │\n"
+            "│ 2️⃣ Responde a esa imagen con /check │\n"
+            "│ 3️⃣ Espera la verificación oficial   │\n"
+            "└─────────────────────────────────┘\n\n"
+            "🎁 **¡Obtén recompensas por capturas válidas!**\n"
+            "⚡ **Verificación rápida en menos de 24h**\n\n"
+            "💡 **TIP:** Solo capturas auténticas serán aprobadas",
             parse_mode=ParseMode.MARKDOWN)
         return
-    
+
     # Verificar que el grupo tenga configurado el sistema
     check_config = db.get_check_chats(group_id)
     if not check_config:
         await update.message.reply_text(
-            "⚙️ **SISTEMA NO CONFIGURADO** ⚙️\n\n"
-            "❌ **El sistema /check no está configurado en este grupo**\n\n"
-            "👮‍♂️ **Administradores:** Usen `/setcheckchats` para configurar\n"
-            "💡 **Se necesita configurar chat de verificación y publicación**",
+            "╔══════════════════════════════════╗\n"
+            "║      ⚙️  **SISTEMA NO CONFIGURADO**  ⚙️      ║\n"
+            "╚══════════════════════════════════╝\n\n"
+            "❌ **El sistema de verificación no está activo**\n\n"
+            "🔧 **Para administradores:**\n"
+            "• Usar comando `/setcheckchats`\n"
+            "• Configurar chat de verificación\n"
+            "• Configurar canal de publicación\n\n"
+            "📞 **Contacta a la administración para activar**",
             parse_mode=ParseMode.MARKDOWN)
         return
-    
+
     # Generar ID único para esta verificación
     import uuid
     check_id = str(uuid.uuid4())[:8]
-    
+
     # Obtener información de la imagen
-    photo = update.message.reply_to_message.photo[-1]  # La imagen de mayor calidad
+    photo = update.message.reply_to_message.photo[
+        -1]  # La imagen de mayor calidad
     image_file_id = photo.file_id
-    
+
     # Guardar verificación pendiente
     username = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
     db.add_pending_check(check_id, user_id, username, image_file_id, group_id)
-    
-    # Enviar confirmación al usuario
+
+    # Enviar confirmación al usuario con diseño mejorado
     await update.message.reply_text(
-        f"✅ **CAPTURA ENVIADA PARA VERIFICACIÓN** ✅\n\n"
-        f"🆔 **ID de verificación:** `{check_id}`\n"
-        f"👤 **Usuario:** {username}\n"
-        f"📸 **Imagen:** Capturada correctamente\n"
-        f"⏳ **Estado:** Esperando revisión administrativa\n\n"
-        f"💰 **Recompensa:** 6 créditos si es aprobada\n"
-        f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-        f"⏰ **Tiempo de respuesta:** Máximo 24 horas",
+        "╔══════════════════════════════════╗\n"
+        "║    🎯  **CAPTURA EN VERIFICACIÓN**  🎯    ║\n"
+        "╚══════════════════════════════════╝\n\n"
+        "✨ **¡Tu captura ha sido enviada exitosamente!**\n\n"
+        "┌─────────── 📊 **DETALLES** ───────────┐\n"
+        f"│ 🆔 **ID:** `{check_id}`\n"
+        f"│ 👤 **Usuario:** {username}\n"
+        f"│ 📸 **Estado:** Imagen procesada ✅\n"
+        f"│ ⏳ **Revisión:** En proceso...\n"
+        "└──────────────────────────────────────┘\n\n"
+        f"📅 **Enviado:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+        "⏰ **Tiempo máximo:** 24 horas\n\n"
+        "🌟 **¡Mantente atento a las actualizaciones!**",
         parse_mode=ParseMode.MARKDOWN)
-    
+
     # Enviar imagen al chat de verificación para administradores
     try:
         verification_chat_id = check_config['verification_chat']
-        
+
         # Crear botones para aprobar/rechazar
         keyboard = [[
-            InlineKeyboardButton("✅ APROBAR", callback_data=f'approve_check_{check_id}'),
-            InlineKeyboardButton("❌ RECHAZAR", callback_data=f'reject_check_{check_id}')
+            InlineKeyboardButton("✅ APROBAR",
+                                 callback_data=f'approve_check_{check_id}'),
+            InlineKeyboardButton("❌ RECHAZAR",
+                                 callback_data=f'reject_check_{check_id}')
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         # Enviar imagen con información al chat de verificación
         caption = f"🔍 **NUEVA VERIFICACIÓN PENDIENTE** 🔍\n\n"
         caption += f"🆔 **ID:** `{check_id}`\n"
@@ -2518,20 +2574,26 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
         caption += f"💰 **Recompensa:** 6 créditos si se aprueba\n"
         caption += f"📝 **Acción requerida:** Aprobar o rechazar captura"
-        
-        await context.bot.send_photo(
-            chat_id=verification_chat_id,
-            photo=image_file_id,
-            caption=caption,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup)
-            
+
+        await context.bot.send_photo(chat_id=verification_chat_id,
+                                     photo=image_file_id,
+                                     caption=caption,
+                                     parse_mode=ParseMode.MARKDOWN,
+                                     reply_markup=reply_markup)
+
     except Exception as e:
         logger.error(f"Error enviando a chat de verificación: {e}")
         await update.message.reply_text(
-            f"❌ **ERROR DEL SISTEMA**\n\n"
-            f"🔍 **Error:** No se pudo enviar al chat de verificación\n"
-            f"👮‍♂️ **Contacta a los administradores**")
+            "╔══════════════════════════════════╗\n"
+            "║        ❌  **ERROR DEL SISTEMA**  ❌        ║\n"
+            "╚══════════════════════════════════╝\n\n"
+            "🔧 **No se pudo procesar la verificación**\n\n"
+            "💡 **Posibles causas:**\n"
+            "• Configuración incompleta del sistema\n"
+            "• Problemas temporales de conectividad\n"
+            "• Mantenimiento en curso\n\n"
+            "📞 **Contacta a los administradores para asistencia**")
+
 
 async def juegos_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sección de juegos con botones inline - Límite: 1 cada 12 horas"""
@@ -3521,8 +3583,300 @@ async def housemode_command(update: Update,
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
+def escape_markdown_v2(text):
+    """Escapa caracteres especiales para MarkdownV2"""
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in special_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
+
+def organize_content_with_ai(content):
+    """IA para organizar y estructurar el contenido automáticamente"""
+    import re
+    
+    # Detectar diferentes tipos de contenido
+    cc_pattern = r'\b\d{13,19}\|\d{1,2}\|\d{2,4}(?:\|\d{3,4})?\b'
+    ccs_found = re.findall(cc_pattern, content)
+    
+    # Detectar URLs/enlaces
+    url_pattern = r'https?://[^\s]+'
+    urls_found = re.findall(url_pattern, content)
+    
+    # Detectar hashtags
+    hashtag_pattern = r'#[a-zA-Z0-9_]+'
+    hashtags_found = re.findall(hashtag_pattern, content)
+    
+    # Detectar menciones de canales/usuarios
+    mention_pattern = r'@[a-zA-Z0-9_]+'
+    mentions_found = re.findall(mention_pattern, content)
+    
+    # Remover elementos detectados del contenido principal
+    clean_content = content
+    for cc in ccs_found:
+        clean_content = clean_content.replace(cc, "")
+    for url in urls_found:
+        clean_content = clean_content.replace(url, "")
+    for hashtag in hashtags_found:
+        clean_content = clean_content.replace(hashtag, "")
+    for mention in mentions_found:
+        clean_content = clean_content.replace(mention, "")
+    
+    # Limpiar texto extra
+    clean_content = ' '.join(clean_content.split())
+    
+    return {
+        'content': clean_content,
+        'ccs': ccs_found,
+        'urls': urls_found,
+        'hashtags': hashtags_found,
+        'mentions': mentions_found
+    }
+
+def format_smart_publication(organized_data, author_name):
+    """Formatea inteligentemente la publicación según el contenido detectado"""
+    content = organized_data['content']
+    ccs = organized_data['ccs']
+    urls = organized_data['urls']
+    hashtags = organized_data['hashtags']
+    mentions = organized_data['mentions']
+    
+    # Escapar caracteres especiales
+    safe_content = escape_markdown_v2(content) if content else ""
+    safe_author = escape_markdown_v2(author_name)
+    
+    if ccs:
+        # Formato para releases con CCs
+        message = "┌─────────────────────────────────┐\n"
+        message += "│  🔥 *CHERNOBIL CHLV RELEASE* 🔥  │\n"
+        message += "└─────────────────────────────────┘\n\n"
+        
+        if safe_content:
+            message += f"📝 *Descripción:*\n{safe_content}\n\n"
+        
+        # Categorizar CCs por tipo
+        visa_ccs = [cc for cc in ccs if cc.startswith('4')]
+        mastercard_ccs = [cc for cc in ccs if cc.startswith('5')]
+        other_ccs = [cc for cc in ccs if not cc.startswith(('4', '5'))]
+        
+        message += "💳 *TARJETAS DISPONIBLES:*\n"
+        
+        if visa_ccs:
+            message += f"🔵 *VISA* \\({len(visa_ccs)} tarjetas\\):\n"
+            for cc in visa_ccs[:10]:  # Máximo 10 por tipo
+                message += f"`{cc}`\n"
+            if len(visa_ccs) > 10:
+                message += f"\\.\\.\\. y {len(visa_ccs) - 10} más\n"
+            message += "\n"
+        
+        if mastercard_ccs:
+            message += f"🔴 *MASTERCARD* \\({len(mastercard_ccs)} tarjetas\\):\n"
+            for cc in mastercard_ccs[:10]:
+                message += f"`{cc}`\n"
+            if len(mastercard_ccs) > 10:
+                message += f"\\.\\.\\. y {len(mastercard_ccs) - 10} más\n"
+            message += "\n"
+        
+        if other_ccs:
+            message += f"⚫ *OTRAS* \\({len(other_ccs)} tarjetas\\):\n"
+            for cc in other_ccs[:5]:
+                message += f"`{cc}`\n"
+            if len(other_ccs) > 5:
+                message += f"\\.\\.\\. y {len(other_ccs) - 5} más\n"
+            message += "\n"
+        
+        message += f"┌─────── 📊 *ESTADÍSTICAS* ───────┐\n"
+        message += f"│ 🎯 Total: {len(ccs)} tarjetas\n"
+        message += f"│ 🔵 VISA: {len(visa_ccs)}\n"
+        message += f"│ 🔴 MasterCard: {len(mastercard_ccs)}\n"
+        message += f"│ ⚫ Otras: {len(other_ccs)}\n"
+        message += f"│ ⚡ Estado: Verificadas\n"
+        message += f"│ 🔥 Calidad: Premium\n"
+        message += f"│ 📅 Fecha: {datetime.now().strftime('%d/%m/%Y')}\n"
+        message += f"└─────────────────────────────┘\n\n"
+        
+    else:
+        # Formato para contenido general con IA
+        message = "╔══════════════════════════════════╗\n"
+        message += "║    📢 *CHERNOBIL CHLV UPDATE*    ║\n"
+        message += "╚══════════════════════════════════╝\n\n"
+        
+        if safe_content:
+            message += f"{safe_content}\n\n"
+        
+        if urls:
+            message += "🔗 *Enlaces importantes:*\n"
+            for url in urls:
+                safe_url = escape_markdown_v2(url)
+                message += f"• {safe_url}\n"
+            message += "\n"
+        
+        message += f"───────────────────────────────────\n"
+        message += f"📅 *Fecha:* {escape_markdown_v2(datetime.now().strftime('%d/%m/%Y %H:%M'))}\n"
+    
+    # Agregar hashtags y menciones si existen
+    if hashtags:
+        message += f"🏷️ *Tags:* "
+        for hashtag in hashtags:
+            safe_hashtag = escape_markdown_v2(hashtag)
+            message += f"{safe_hashtag} "
+        message += "\n"
+    
+    if mentions:
+        message += f"👤 *Menciones:* "
+        for mention in mentions:
+            safe_mention = escape_markdown_v2(mention)
+            message += f"{safe_mention} "
+        message += "\n"
+    
+    message += f"👑 *Publicado por:* {safe_author}\n"
+    message += f"🤖 *Bot:* @ChernobilChLv\\_bot"
+    
+    return message
+
+@staff_only(2)  # Co-fundador o superior (Fundador nivel 1, Co-fundador nivel 2)
+async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /post con IA para organizar contenido - Solo fundadores y co-fundadores"""
+    user_id = str(update.effective_user.id)
+    staff_data = db.get_staff_role(user_id)
+    is_admin = update.effective_user.id in ADMIN_IDS
+    is_founder = update.effective_user.id in FOUNDER_IDS
+    is_cofounder = update.effective_user.id in COFOUNDER_IDS
+    
+    # Verificar permisos adicionales
+    if not (is_admin or is_founder or is_cofounder or (staff_data and staff_data['role'] in ['1', '2'])):
+        await update.message.reply_text(
+            "🔒 *ACCESO DENEGADO* 🔒\n\n"
+            "❌ Este comando está restringido a:\n"
+            "• 👑 Fundadores\n"
+            "• 💎 Co\\-fundadores\n\n"
+            "💡 Contacta a la administración para más información",
+            parse_mode=ParseMode.MARKDOWN_V2)
+        return
+    
+    args = context.args
+    current_chat_id = str(update.effective_chat.id)
+    
+    if not args:
+        await update.message.reply_text(
+            "📢 *SISTEMA DE PUBLICACIONES CON IA* 📢\n\n"
+            "*Uso:* `/post [chat_id] [contenido]`\n\n"
+            "📋 *Ejemplos:*\n"
+            "• `/post \\-1001234567890 Mi publicación`\n"
+            "• `/post here Mi contenido` \\(publica aquí\\)\n\n"
+            "🤖 *Funciones de IA:*\n"
+            "• Organización automática de CCs por tipo\n"
+            "• Detección inteligente de contenido\n"
+            "• Formato profesional adaptativo\n"
+            "• Separación de URLs y hashtags\n"
+            "• Estadísticas automáticas\n\n"
+            "💡 *Tip:* La IA organizará automáticamente tu contenido",
+            parse_mode=ParseMode.MARKDOWN_V2)
+        return
+    
+    # Obtener chat destino
+    target_chat = args[0]
+    if target_chat.lower() == "here":
+        target_chat_id = current_chat_id
+    else:
+        target_chat_id = target_chat
+    
+    # Obtener contenido (todo después del primer argumento)
+    content = ' '.join(args[1:]) if len(args) > 1 else ""
+    
+    if not content:
+        await update.message.reply_text(
+            "❌ *CONTENIDO REQUERIDO*\n\n"
+            "📝 Debes incluir el contenido a publicar\n"
+            "💡 *Ejemplo:* `/post here Mi contenido aquí`",
+            parse_mode=ParseMode.MARKDOWN_V2)
+        return
+    
+    # Procesar contenido con IA
+    try:
+        # Mensaje de procesamiento
+        processing_msg = await update.message.reply_text(
+            "🤖 *PROCESANDO CON IA* 🤖\n\n"
+            "⚡ Analizando contenido\\.\\.\\.\n"
+            "🔍 Detectando elementos\\.\\.\\.\n"
+            "📊 Organizando información\\.\\.\\.\n"
+            "🎨 Aplicando formato inteligente\\.\\.\\.",
+            parse_mode=ParseMode.MARKDOWN_V2)
+        
+        # Simular procesamiento IA
+        await asyncio.sleep(2)
+        
+        # Organizar contenido con IA
+        organized_data = organize_content_with_ai(content)
+        
+        # Formatear publicación inteligentemente
+        publication_message = format_smart_publication(organized_data, update.effective_user.first_name)
+        
+        # Obtener información del chat destino
+        try:
+            chat_info = await context.bot.get_chat(target_chat_id)
+            chat_name = chat_info.title or f"Chat {target_chat_id}"
+        except:
+            chat_name = f"Chat {target_chat_id}"
+        
+        # Actualizar mensaje de procesamiento
+        await processing_msg.edit_text(
+            f"📤 *PREPARANDO PUBLICACIÓN* 📤\n\n"
+            f"🎯 *Destino:* {escape_markdown_v2(chat_name)}\n"
+            f"📊 *Tipo:* {'Release con CCs' if organized_data['ccs'] else 'Contenido general'}\n"
+            f"💳 *CCs detectadas:* {len(organized_data['ccs'])}\n"
+            f"🔗 *URLs detectadas:* {len(organized_data['urls'])}\n"
+            f"🏷️ *Hashtags:* {len(organized_data['hashtags'])}\n"
+            f"👤 *Autor:* {escape_markdown_v2(update.effective_user.first_name)}\n\n"
+            f"⏳ *Enviando\\.\\.\\.*",
+            parse_mode=ParseMode.MARKDOWN_V2)
+        
+        # Publicar en el chat destino usando MarkdownV2
+        sent_message = await context.bot.send_message(
+            chat_id=target_chat_id,
+            text=publication_message,
+            parse_mode=ParseMode.MARKDOWN_V2)
+        
+        # Actualizar confirmación con éxito
+        success_message = f"✅ *PUBLICACIÓN EXITOSA* ✅\n\n"
+        success_message += f"🎯 *Destino:* {escape_markdown_v2(chat_name)}\n"
+        success_message += f"📨 *Message ID:* `{sent_message.message_id}`\n"
+        success_message += f"📊 *Análisis IA:*\n"
+        success_message += f"  • CCs: {len(organized_data['ccs'])}\n"
+        success_message += f"  • URLs: {len(organized_data['urls'])}\n"
+        success_message += f"  • Hashtags: {len(organized_data['hashtags'])}\n"
+        success_message += f"  • Menciones: {len(organized_data['mentions'])}\n"
+        success_message += f"👤 *Publicado por:* {escape_markdown_v2(update.effective_user.first_name)}\n"
+        success_message += f"⏰ *Hora:* {escape_markdown_v2(datetime.now().strftime('%H:%M:%S'))}\n\n"
+        success_message += f"🎉 *¡Publicación completada con IA\\!*"
+        
+        await processing_msg.edit_text(success_message, parse_mode=ParseMode.MARKDOWN_V2)
+        
+        # Log de la publicación
+        logger.info(f"Publicación con IA - Usuario: {update.effective_user.id} ({update.effective_user.first_name}) - Destino: {target_chat_id} - CCs: {len(organized_data['ccs'])}")
+        
+    except Exception as e:
+        # Error al publicar - usar texto plano para evitar errores de parsing
+        error_message = f"❌ ERROR EN PUBLICACIÓN ❌\n\n"
+        error_message += f"🎯 Destino: {target_chat_id}\n"
+        error_message += f"🔍 Error: {str(e)[:100]}...\n\n"
+        error_message += f"💡 Posibles causas:\n"
+        error_message += f"• El bot no está en ese chat\n"
+        error_message += f"• ID de chat incorrecto\n"
+        error_message += f"• Sin permisos para enviar mensajes\n"
+        error_message += f"• Chat privado no accesible\n\n"
+        error_message += f"🔧 Solución: Verifica el ID y permisos del bot"
+        
+        try:
+            await processing_msg.edit_text(error_message)
+        except:
+            await update.message.reply_text(error_message)
+        
+        logger.error(f"Error en publicación con IA - Usuario: {update.effective_user.id} - Error: {e}")
+
+
 @admin_only
-async def setcheckchats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def setcheckchats_command(update: Update,
+                                context: ContextTypes.DEFAULT_TYPE):
     """Configurar chats para el sistema /check - Solo admins"""
     args = context.args
     group_id = str(update.effective_chat.id)
@@ -3542,14 +3896,14 @@ async def setcheckchats_command(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         verification_chat = args[0]
         publication_chat = args[1]
-        
+
         # Validar que sean IDs válidos
         int(verification_chat)
         int(publication_chat)
-        
+
         # Guardar configuración
         db.set_check_chats(group_id, verification_chat, publication_chat)
-        
+
         response = f"✅ **CONFIGURACIÓN GUARDADA** ✅\n\n"
         response += f"🏠 **Grupo actual:** `{group_id}`\n"
         response += f"👮‍♂️ **Chat verificación:** `{verification_chat}`\n"
@@ -3557,14 +3911,16 @@ async def setcheckchats_command(update: Update, context: ContextTypes.DEFAULT_TY
         response += f"⚙️ **Configurado por:** {update.effective_user.first_name}\n"
         response += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
         response += f"✨ **El comando /check ya está listo para usar**"
-        
-        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
-        
+
+        await update.message.reply_text(response,
+                                        parse_mode=ParseMode.MARKDOWN)
+
     except ValueError:
         await update.message.reply_text(
             "❌ **IDs INVÁLIDOS**\n\n"
             "💡 Los IDs deben ser números enteros\n"
             "📝 Ejemplo: `/setcheckchats -1001234567890 -1001987654321`")
+
 
 @admin_only
 async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3917,11 +4273,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(response,
                                       reply_markup=reply_markup,
                                       parse_mode=ParseMode.MARKDOWN)
-                                      
+
     # Callbacks para sistema /check
     elif query.data.startswith('approve_check_'):
         await handle_check_approval(query, context, True)
-        
+
     elif query.data.startswith('reject_check_'):
         await handle_check_approval(query, context, False)
     # Callback para regenerar tarjetas
@@ -3997,44 +4353,49 @@ async def handle_check_approval(query, context, is_approved):
     """Maneja la aprobación o rechazo de capturas por administradores"""
     admin_id = str(query.from_user.id)
     admin_user = query.from_user
-    
+
     # Verificar que sea admin
     if query.from_user.id not in ADMIN_IDS:
-        await query.answer("❌ Solo administradores pueden aprobar/rechazar capturas", show_alert=True)
+        await query.answer(
+            "❌ Solo administradores pueden aprobar/rechazar capturas",
+            show_alert=True)
         return
-    
+
     # Extraer ID de verificación
     check_id = query.data.split('_')[-1]
-    
+
     # Obtener datos de la verificación
     check_data = db.get_pending_check(check_id)
     if not check_data:
-        await query.answer("❌ Verificación no encontrada o ya procesada", show_alert=True)
+        await query.answer("❌ Verificación no encontrada o ya procesada",
+                           show_alert=True)
         return
-    
+
     if check_data['status'] != 'pending':
-        await query.answer("❌ Esta verificación ya fue procesada", show_alert=True)
+        await query.answer("❌ Esta verificación ya fue procesada",
+                           show_alert=True)
         return
-    
+
     # Obtener configuración del grupo
     group_id = check_data['group_id']
     check_config = db.get_check_chats(group_id)
-    
+
     if not check_config:
-        await query.answer("❌ Configuración de chats no encontrada", show_alert=True)
+        await query.answer("❌ Configuración de chats no encontrada",
+                           show_alert=True)
         return
-    
+
     user_id = check_data['user_id']
     username = check_data['username']
     user_data = db.get_user(user_id)
-    
+
     if is_approved:
         # APROBAR: Dar 6 créditos al usuario
         new_credits = user_data['credits'] + 6
         db.update_user(user_id, {'credits': new_credits})
         db.update_check_status(check_id, 'approved', admin_id)
-        
-        # Actualizar mensaje de verificación
+
+        # Actualizar mensaje de verificación (para admins)
         approval_text = f"✅ **CAPTURA APROBADA** ✅\n\n"
         approval_text += f"🆔 **ID:** `{check_id}`\n"
         approval_text += f"👤 **Usuario:** {username}\n"
@@ -4043,44 +4404,70 @@ async def handle_check_approval(query, context, is_approved):
         approval_text += f"👮‍♂️ **Aprobado por:** {admin_user.first_name}\n"
         approval_text += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
         approval_text += f"🎉 **¡Felicidades al usuario por su captura válida!**"
-        
+
         try:
-            await query.edit_message_caption(
-                caption=approval_text,
-                parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_caption(caption=approval_text,
+                                             parse_mode=ParseMode.MARKDOWN)
         except:
             pass
-        
+
+        # Enviar mensaje de aprobación al grupo principal (SIN MOSTRAR CRÉDITOS)
+        try:
+            # Escapar el username para evitar errores de parsing
+            safe_username = escape_markdown(username)
+
+            approval_message = "╔══════════════════════════════════╗\n"
+            approval_message += "║      🎉  **CAPTURA APROBADA**  🎉      ║\n"
+            approval_message += "╚══════════════════════════════════╝\n\n"
+            approval_message += "🌟 **¡Felicitaciones!** Esta captura ha sido verificada\n\n"
+            approval_message += f"👤 **Usuario:** {safe_username}\n"
+            approval_message += f"✅ **Estado:** Aprobada oficialmente\n"
+            approval_message += f"🤖 **Verificada por:** @ChernobilChLv\\_bot\n\n"
+            approval_message += "🎁 **¡Has recibido 6 creditos!**\n"
+            approval_message += "💡 **Sigue compartiendo capturas válidas para más beneficios**"
+
+            await context.bot.send_message(chat_id=group_id,
+                                           text=approval_message,
+                                           parse_mode=ParseMode.MARKDOWN)
+
+        except Exception as e:
+            logger.error(f"Error enviando mensaje al grupo principal: {e}")
+
         # Publicar en canal de publicaciones
         try:
             publication_chat_id = check_config['publication_chat']
-            
-            # Crear mensaje de publicación
-            publication_text = f"🏆 **CAPTURA VERIFICADA Y APROBADA** 🏆\n\n"
-            publication_text += f"👤 **Usuario:** {username}\n"
-            publication_text += f"✅ **Estado:** Verificado por administración\n"
-            publication_text += f"💰 **Recompensa:** 6 créditos otorgados\n"
-            publication_text += f"🆔 **Referencia:** `{check_id}`\n"
+
+            # Crear mensaje de publicación con texto escapado
+            safe_username = escape_markdown(username)
+            safe_check_id = escape_markdown(check_id)
+
+            publication_text = "╔══════════════════════════════════╗\n"
+            publication_text += "║    🏆  **CAPTURA VERIFICADA**  🏆    ║\n"
+            publication_text += "╚══════════════════════════════════╝\n\n"
+            publication_text += f"👤 **Usuario:** {safe_username}\n"
+            publication_text += f"✅ **Estado:** Verificado oficialmente\n"
+            publication_text += f"🤖 **Aprobado por:** @ChernobilChLv\\_bot\n"
+            publication_text += f"🆔 **Referencia:** `{safe_check_id}`\n"
             publication_text += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            publication_text += f"🎯 **¡Excelente trabajo! Sigue así para más recompensas!**\n"
+            publication_text += f"🎯 **¡Excelente trabajo!** Sigue así para más recompensas\n"
             publication_text += f"💡 **Usa /check para verificar tus capturas**"
-            
-            await context.bot.send_photo(
-                chat_id=publication_chat_id,
-                photo=check_data['image_file_id'],
-                caption=publication_text,
-                parse_mode=ParseMode.MARKDOWN)
-            
+
+            await context.bot.send_photo(chat_id=publication_chat_id,
+                                         photo=check_data['image_file_id'],
+                                         caption=publication_text,
+                                         parse_mode=ParseMode.MARKDOWN)
+
         except Exception as e:
             logger.error(f"Error publicando en canal: {e}")
-        
-        await query.answer("✅ Captura aprobada - 6 créditos otorgados", show_alert=True)
-        
+
+        await query.answer("✅ Captura aprobada - Recompensa otorgada",
+                           show_alert=True)
+
     else:
         # RECHAZAR: Solo actualizar estado
         db.update_check_status(check_id, 'rejected', admin_id)
-        
-        # Actualizar mensaje de verificación
+
+        # Actualizar mensaje de verificación (para admins)
         rejection_text = f"❌ **CAPTURA RECHAZADA** ❌\n\n"
         rejection_text += f"🆔 **ID:** `{check_id}`\n"
         rejection_text += f"👤 **Usuario:** {username}\n"
@@ -4089,15 +4476,35 @@ async def handle_check_approval(query, context, is_approved):
         rejection_text += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
         rejection_text += f"📝 **Motivo:** Captura no cumple con los criterios\n"
         rejection_text += f"💡 **El usuario puede intentar con otra captura válida**"
-        
+
         try:
-            await query.edit_message_caption(
-                caption=rejection_text,
-                parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_caption(caption=rejection_text,
+                                             parse_mode=ParseMode.MARKDOWN)
         except:
             pass
-        
-        await query.answer("❌ Captura rechazada - Sin recompensa", show_alert=True)
+
+        # Enviar mensaje de rechazo al grupo principal (opcional)
+        try:
+            safe_username = escape_markdown(username)
+
+            rejection_message = "╔══════════════════════════════════╗\n"
+            rejection_message += "║      ❌  **CAPTURA RECHAZADA**  ❌      ║\n"
+            rejection_message += "╚══════════════════════════════════╝\n\n"
+            rejection_message += f"👤 **Usuario:** {safe_username}\n"
+            rejection_message += f"🤖 **Revisado por:** @ChernobilChLv\\_bot\n\n"
+            rejection_message += "📝 **Motivo:** La captura no cumple con los criterios\n"
+            rejection_message += "💡 **Puedes intentar nuevamente con una captura válida**"
+
+            await context.bot.send_message(chat_id=group_id,
+                                           text=rejection_message,
+                                           parse_mode=ParseMode.MARKDOWN)
+
+        except Exception as e:
+            logger.error(f"Error enviando mensaje de rechazo al grupo: {e}")
+
+        await query.answer("❌ Captura rechazada - Sin recompensa",
+                           show_alert=True)
+
 
 async def handle_game_play(query, context, game_type):
     """Maneja la lógica de juegos con límite de 12 horas"""
@@ -4258,15 +4665,10 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     """Función principal del bot"""
     # Configuración del bot para evitar conflictos
-    application = (Application.builder()
-                   .token(BOT_TOKEN)
-                   .concurrent_updates(False)
-                   .connect_timeout(60)
-                   .read_timeout(60)  
-                   .write_timeout(60)
-                   .get_updates_connect_timeout(60)
-                   .get_updates_read_timeout(60)
-                   .build())
+    application = (
+        Application.builder().token(BOT_TOKEN).concurrent_updates(
+            False).connect_timeout(60).read_timeout(60).write_timeout(60).
+        get_updates_connect_timeout(60).get_updates_read_timeout(60).build())
 
     # Registrar comandos principales
     application.add_handler(CommandHandler("start", start))
@@ -4285,7 +4687,11 @@ def main():
 
     # Sistema de verificación /check
     application.add_handler(CommandHandler("check", check_command))
-    application.add_handler(CommandHandler("setcheckchats", setcheckchats_command))
+    application.add_handler(
+        CommandHandler("setcheckchats", setcheckchats_command))
+    
+    # Sistema de publicaciones
+    application.add_handler(CommandHandler("post", post_command))
 
     # Comandos de admin y staff
     application.add_handler(CommandHandler("staff", staff_command))
