@@ -613,6 +613,13 @@ async def get_real_bin_info(bin_number):
     }
 
 
+def escape_markdown(text):
+    """Escapa caracteres especiales para Markdown"""
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in special_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
+
 def get_enhanced_bin_info(bin_number):
     """Información simulada de BIN - Función legacy"""
     return {
@@ -643,6 +650,8 @@ class Database:
         self.staff_roles = {}  # Sistema de roles de staff
         self.bot_maintenance = False  # Estado de mantenimiento
         self.maintenance_message = ""  # Mensaje de mantenimiento
+        self.check_chats = {}  # Configuración de chats para /check
+        self.pending_checks = {}  # Verificaciones pendientes
         self.load_data()
 
     def load_data(self):
@@ -653,13 +662,16 @@ class Database:
                     self.users = data.get('users', {})
                     self.staff_roles = data.get('staff_roles', {})
                     self.bot_maintenance = data.get('bot_maintenance', False)
-                    self.maintenance_message = data.get(
-                        'maintenance_message', "")
+                    self.maintenance_message = data.get('maintenance_message', "")
+                    self.check_chats = data.get('check_chats', {})
+                    self.pending_checks = data.get('pending_checks', {})
         except:
             self.users = {}
             self.staff_roles = {}
             self.bot_maintenance = False
             self.maintenance_message = ""
+            self.check_chats = {}
+            self.pending_checks = {}
 
     def save_data(self):
         try:
@@ -669,7 +681,9 @@ class Database:
                         'users': self.users,
                         'staff_roles': self.staff_roles,
                         'bot_maintenance': self.bot_maintenance,
-                        'maintenance_message': self.maintenance_message
+                        'maintenance_message': self.maintenance_message,
+                        'check_chats': self.check_chats,
+                        'pending_checks': self.pending_checks
                     },
                     f,
                     indent=2)
@@ -758,6 +772,44 @@ class Database:
             self.save_data()
             return self.staff_roles[user_id]['warn_count']
         return 0
+
+    def set_check_chats(self, group_id: str, verification_chat: str, publication_chat: str):
+        """Configurar chats para el sistema /check"""
+        self.check_chats[group_id] = {
+            'verification_chat': verification_chat,
+            'publication_chat': publication_chat,
+            'configured_at': datetime.now().isoformat()
+        }
+        self.save_data()
+
+    def get_check_chats(self, group_id: str):
+        """Obtener configuración de chats para /check"""
+        return self.check_chats.get(group_id, None)
+
+    def add_pending_check(self, check_id: str, user_id: str, username: str, image_file_id: str, group_id: str):
+        """Agregar verificación pendiente"""
+        self.pending_checks[check_id] = {
+            'user_id': user_id,
+            'username': username,
+            'image_file_id': image_file_id,
+            'group_id': group_id,
+            'created_at': datetime.now().isoformat(),
+            'status': 'pending'
+        }
+        self.save_data()
+
+    def get_pending_check(self, check_id: str):
+        """Obtener verificación pendiente"""
+        return self.pending_checks.get(check_id, None)
+
+    def update_check_status(self, check_id: str, status: str, admin_id: str = None):
+        """Actualizar estado de verificación"""
+        if check_id in self.pending_checks:
+            self.pending_checks[check_id]['status'] = status
+            if admin_id:
+                self.pending_checks[check_id]['admin_id'] = admin_id
+                self.pending_checks[check_id]['processed_at'] = datetime.now().isoformat()
+            self.save_data()
 
 
 # Configuración del bot
@@ -1612,36 +1664,30 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_methods = all_api_methods[:5]  # Solo 5 métodos para usuarios estándar
         methods_text = f"⚡ Usando {len(api_methods)} APIs simultáneas (métodos estándar)"
 
-    # Mensaje inicial mejorado - diferente para 1 tarjeta vs múltiples
-    if total_cards == 1:
-        progress_msg = await update.message.reply_text(
-            "⊚ **CHERNOBIL VERIFICANDO TARJETA..** ⊚\n\n"
-            f"💳 Procesando tarjeta única...\n"
-            f"{methods_text}...")
-    else:
-        progress_msg = await update.message.reply_text(
-            "⊚ **CHERNOBIL ESTA VERIFICANDO TARJETAS..** ⊚\n\n"
-            f"📊 Progreso: [░░░░░░░░░░] 0%\n"
-            f"💳 Tarjeta 0/{total_cards}\n"
-            f"{methods_text}...")
+    # Mensaje inicial unificado que funciona para 1 o múltiples tarjetas
+    progress_msg = await update.message.reply_text(
+        "⊚ **CHERNOBIL VERIFICANDO..** ⊚\n\n"
+        f"💳 Procesando {total_cards} tarjeta{'s' if total_cards > 1 else ''}...\n"
+        f"{methods_text}...")
 
     results = []
 
     for card_index, card_data in enumerate(cards_list):
-        # Actualizar barra de progreso SOLO si hay más de 1 tarjeta
-        if total_cards > 1:
-            progress = (card_index + 1) / total_cards * 100
-            progress_bar = "█" * int(progress // 10) + "░" * (10 - int(progress // 10))
+        # Actualizar progreso con formato unificado
+        try:
+            if total_cards > 1:
+                progress = (card_index + 1) / total_cards * 100
+                progress_bar = "█" * int(progress // 10) + "░" * (10 - int(progress // 10))
+                progress_text = f"📊 Progreso: [{progress_bar}] {progress:.0f}%\n💳 Tarjeta {card_index + 1}/{total_cards}"
+            else:
+                progress_text = f"💳 Verificando tarjeta única..."
 
-            try:
-                await progress_msg.edit_text(
-                    f"⊚ **CHERNOBIL ESTA VERIFICANDO TARJETAS..** ⊚\n\n"
-                    f"📊 Progreso: [{progress_bar}] {progress:.0f}%\n"
-                    f"💳 Tarjeta {card_index + 1}/{total_cards}\n"
-                    f"{methods_text}...",
-                    parse_mode=ParseMode.MARKDOWN)
-            except:
-                pass
+            await progress_msg.edit_text(
+                f"⊚ **CHERNOBIL VERIFICANDO..** ⊚\n\n"
+                f"{progress_text}\n"
+                f"{methods_text}...")
+        except:
+            pass
 
         parts = card_data.split('|')
 
@@ -1675,31 +1721,83 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'bin_info': bin_info
         })
 
-    # Usar el formato solicitado para TODAS las tarjetas
+    # Construir respuesta final con formato mejorado
     final_response = ""
     
-    for result in results:
-        final_response += f"[{result['index']}] {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
-        final_response += f"┆ ⊱ ┆Status: {result['status']}\n"
-        final_response += f"┆ ⊱ ┆Result: {result['result']}\n"
-        final_response += f"┆ ⊱ ┆Gateway: {result['api']}\n"
-        final_response += f"┆ ⊱ ┆Time: {datetime.now().strftime('%H:%M:%S')}\n"
-        final_response += f"┆ ⊱ ┆Checked by: @{update.effective_user.username or update.effective_user.first_name}\n"
-        final_response += f"┆ ⊱ ┆Bot: @ChernobilChLv_bot\n\n"
+    # Si es UNA SOLA tarjeta, usar formato detallado
+    if total_cards == 1:
+        result = results[0]
+        bin_info = result['bin_info']
+        
+        # Obtener bandera del país
+        country_flags = {
+            'UNITED STATES': '🇺🇸', 'CANADA': '🇨🇦', 'UNITED KINGDOM': '🇬🇧', 
+            'GERMANY': '🇩🇪', 'FRANCE': '🇫🇷', 'SPAIN': '🇪🇸', 'ITALY': '🇮🇹',
+            'BRAZIL': '🇧🇷', 'MEXICO': '🇲🇽', 'ARGENTINA': '🇦🇷', 'COLOMBIA': '🇨🇴',
+            'PERU': '🇵🇪', 'CHILE': '🇨🇱', 'ECUADOR': '🇪🇨', 'VENEZUELA': '🇻🇪'
+        }
+        
+        country_name = bin_info['country'].upper()
+        country_flag = country_flags.get(country_name, '🌍')
+        
+        # Formato detallado para UNA tarjeta
+        final_response += "⋆⁺₊⋆ ༺ 『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』 ༻ ⋆⁺₊⋆\n\n"
+        final_response += f"[𖤍] 𝗖𝗮𝗿𝗱 ⊱ {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
+        final_response += f"[𖤍] 𝗦𝘁𝗮𝘁𝘂𝘀 ⊱ {result['status']}\n"
+        final_response += f"[𖤍] 𝗥𝗲𝘀𝘂𝗹𝘁 ⊱ {result['result']}\n"
+        final_response += f"[𖤍] 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 ⊱ {result['api']} 🛰️\n"
+        final_response += f"───────── 𝗗𝗘𝗧𝗔𝗜𝗟𝗦 ─────────\n"
+        final_response += f"[𖤍] 𝗕𝗜𝗡 ⊱ {result['parts'][0][:6]}xxxxxx\n"
+        final_response += f"[𖤍] 𝗕𝗮𝗻𝗸 ⊱ {bin_info['bank']}\n"
+        final_response += f"[𖤍] 𝗦𝗰𝗵𝗲𝗺𝗲 ⊱ {bin_info['scheme']} | {bin_info['type']}\n"
+        final_response += f"[𖤍] 𝗖𝗼𝘂𝗻𝘁𝗿𝘆 ⊱ {bin_info['country']} {country_flag} - 💲USD\n"
+        final_response += f"────────── 𝗜𝗡𝗙𝗢 ──────────\n"
+        final_response += f"[𖤍] 𝗧𝗶𝗺𝗲 ⊱ {datetime.now().strftime('%H:%M:%S')} ⌛\n"
+        final_response += f"[𖤍] 𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗕𝘆 ⊱ @{update.effective_user.username or update.effective_user.first_name} 👤\n"
+        final_response += f"[𖤍] 𝗕𝗼𝘁 ⊱ @ChernobilChLv_bot 𖠑"
+        
+    else:
+        # Formato compacto para múltiples tarjetas
+        final_response += "⋆⁺₊⋆ ༺ 『𝐂𝐇𝐄𝐑𝐍𝐎𝐁𝐈𝐋 𝐂𝐇𝐋𝐕』 ༻ ⋆⁺₊⋆\n\n"
+        
+        # Resultados de cada tarjeta
+        for result in results:
+            final_response += f"[{result['index']}] {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
+            final_response += f"[𖤍] Status ⊱ {result['status']}\n"
+            final_response += f"[𖤍] Result ⊱ {result['result']}\n"
+            final_response += f"[𖤍] Gateway ⊱ {result['api']} 🛰️\n"
+            final_response += f"[𖤍] Time ⊱ {datetime.now().strftime('%H:%M:%S')} ⌛\n"
+            final_response += f"[𖤍] Checked by ⊱ @{update.effective_user.username or update.effective_user.first_name} 👤\n"
+            final_response += f"[𖤍] Bot ⊱ @ChernobilChLv_bot 𖠑\n"
+            
+            # Separador solo si hay más tarjetas
+            if result['index'] < len(results):
+                final_response += "\n"
 
-    # Estadísticas finales solo si hay múltiples tarjetas
-    if total_cards > 1:
+        # Estadísticas finales para múltiples tarjetas
         live_count = sum(1 for r in results if r['is_live'])
-        final_response += f"🔥 **Resultado:** {live_count}/{total_cards} LIVE\n"
-        final_response += f"⚡ **Efectividad:** {(live_count/total_cards)*100:.1f}%"
+        final_response += f"\n🔥 Resultado: {live_count}/{total_cards} LIVE\n"
+        final_response += f"⚡ Efectividad: {(live_count/total_cards)*100:.1f}%"
 
-    # Actualizar estadísticas
+    # Actualizar estadísticas del usuario
     db.update_user(user_id, {'total_checked': user_data['total_checked'] + len(cards_list)})
 
+    # Enviar respuesta final con mejor manejo de errores
     try:
-        await progress_msg.edit_text(final_response, parse_mode=ParseMode.MARKDOWN)
-    except:
-        await update.message.reply_text(final_response, parse_mode=ParseMode.MARKDOWN)
+        await progress_msg.edit_text(final_response)
+    except Exception as e:
+        logger.error(f"Error editando mensaje de progreso: {e}")
+        try:
+            # Si falla editar, enviar nuevo mensaje
+            await update.message.reply_text(final_response)
+        except Exception as e2:
+            logger.error(f"Error enviando mensaje de respuesta: {e2}")
+            # Mensaje de emergencia ultra-simple
+            try:
+                simple_msg = f"Verificación completada: {len([r for r in results if r['is_live']])}/{total_cards} LIVE"
+                await update.message.reply_text(simple_msg)
+            except:
+                logger.error("Error crítico: No se pudo enviar ningún mensaje de respuesta")
 
 
 async def direccion_command(update: Update,
@@ -2344,6 +2442,96 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
+
+async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /check para verificar capturas - Solo funciona respondiendo a imágenes"""
+    user_id = str(update.effective_user.id)
+    user_data = db.get_user(user_id)
+    group_id = str(update.effective_chat.id)
+    
+    # Verificar que el comando se use respondiendo a una imagen
+    if not update.message.reply_to_message or not update.message.reply_to_message.photo:
+        await update.message.reply_text(
+            "📸 **VERIFICADOR DE CAPTURAS** 📸\n\n"
+            "❌ **Debes responder a una imagen para usar este comando**\n\n"
+            "📋 **Instrucciones:**\n"
+            "1. Envía o reenvía una imagen/captura\n"
+            "2. Responde a esa imagen con `/check`\n"
+            "3. Espera la verificación de un administrador\n\n"
+            "💰 **Recompensa:** 6 créditos por captura aprobada\n"
+            "⏰ **Tiempo:** Revisión en 24 horas máximo",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+    
+    # Verificar que el grupo tenga configurado el sistema
+    check_config = db.get_check_chats(group_id)
+    if not check_config:
+        await update.message.reply_text(
+            "⚙️ **SISTEMA NO CONFIGURADO** ⚙️\n\n"
+            "❌ **El sistema /check no está configurado en este grupo**\n\n"
+            "👮‍♂️ **Administradores:** Usen `/setcheckchats` para configurar\n"
+            "💡 **Se necesita configurar chat de verificación y publicación**",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+    
+    # Generar ID único para esta verificación
+    import uuid
+    check_id = str(uuid.uuid4())[:8]
+    
+    # Obtener información de la imagen
+    photo = update.message.reply_to_message.photo[-1]  # La imagen de mayor calidad
+    image_file_id = photo.file_id
+    
+    # Guardar verificación pendiente
+    username = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
+    db.add_pending_check(check_id, user_id, username, image_file_id, group_id)
+    
+    # Enviar confirmación al usuario
+    await update.message.reply_text(
+        f"✅ **CAPTURA ENVIADA PARA VERIFICACIÓN** ✅\n\n"
+        f"🆔 **ID de verificación:** `{check_id}`\n"
+        f"👤 **Usuario:** {username}\n"
+        f"📸 **Imagen:** Capturada correctamente\n"
+        f"⏳ **Estado:** Esperando revisión administrativa\n\n"
+        f"💰 **Recompensa:** 6 créditos si es aprobada\n"
+        f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        f"⏰ **Tiempo de respuesta:** Máximo 24 horas",
+        parse_mode=ParseMode.MARKDOWN)
+    
+    # Enviar imagen al chat de verificación para administradores
+    try:
+        verification_chat_id = check_config['verification_chat']
+        
+        # Crear botones para aprobar/rechazar
+        keyboard = [[
+            InlineKeyboardButton("✅ APROBAR", callback_data=f'approve_check_{check_id}'),
+            InlineKeyboardButton("❌ RECHAZAR", callback_data=f'reject_check_{check_id}')
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Enviar imagen con información al chat de verificación
+        caption = f"🔍 **NUEVA VERIFICACIÓN PENDIENTE** 🔍\n\n"
+        caption += f"🆔 **ID:** `{check_id}`\n"
+        caption += f"👤 **Usuario:** {username} (`{user_id}`)\n"
+        caption += f"📊 **Créditos actuales:** {user_data['credits']}\n"
+        caption += f"🏠 **Grupo:** `{group_id}`\n"
+        caption += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        caption += f"💰 **Recompensa:** 6 créditos si se aprueba\n"
+        caption += f"📝 **Acción requerida:** Aprobar o rechazar captura"
+        
+        await context.bot.send_photo(
+            chat_id=verification_chat_id,
+            photo=image_file_id,
+            caption=caption,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup)
+            
+    except Exception as e:
+        logger.error(f"Error enviando a chat de verificación: {e}")
+        await update.message.reply_text(
+            f"❌ **ERROR DEL SISTEMA**\n\n"
+            f"🔍 **Error:** No se pudo enviar al chat de verificación\n"
+            f"👮‍♂️ **Contacta a los administradores**")
 
 async def juegos_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sección de juegos con botones inline - Límite: 1 cada 12 horas"""
@@ -3334,6 +3522,51 @@ async def housemode_command(update: Update,
 
 
 @admin_only
+async def setcheckchats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Configurar chats para el sistema /check - Solo admins"""
+    args = context.args
+    group_id = str(update.effective_chat.id)
+
+    if len(args) < 2:
+        await update.message.reply_text(
+            "⚙️ **CONFIGURAR SISTEMA /CHECK** ⚙️\n\n"
+            "**Uso:** `/setcheckchats [chat_verificacion] [chat_publicacion]`\n\n"
+            "📋 **Parámetros:**\n"
+            "• `chat_verificacion`: ID del chat donde los admins aprueban/rechazan\n"
+            "• `chat_publicacion`: ID del canal donde se publican las capturas aprobadas\n\n"
+            "💡 **Ejemplo:** `/setcheckchats -1001234567890 -1001987654321`\n\n"
+            "📝 **Nota:** Usa IDs negativos para grupos/canales",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    try:
+        verification_chat = args[0]
+        publication_chat = args[1]
+        
+        # Validar que sean IDs válidos
+        int(verification_chat)
+        int(publication_chat)
+        
+        # Guardar configuración
+        db.set_check_chats(group_id, verification_chat, publication_chat)
+        
+        response = f"✅ **CONFIGURACIÓN GUARDADA** ✅\n\n"
+        response += f"🏠 **Grupo actual:** `{group_id}`\n"
+        response += f"👮‍♂️ **Chat verificación:** `{verification_chat}`\n"
+        response += f"📢 **Canal publicación:** `{publication_chat}`\n\n"
+        response += f"⚙️ **Configurado por:** {update.effective_user.first_name}\n"
+        response += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        response += f"✨ **El comando /check ya está listo para usar**"
+        
+        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+        
+    except ValueError:
+        await update.message.reply_text(
+            "❌ **IDs INVÁLIDOS**\n\n"
+            "💡 Los IDs deben ser números enteros\n"
+            "📝 Ejemplo: `/setcheckchats -1001234567890 -1001987654321`")
+
+@admin_only
 async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bloqueo total del grupo - Solo admins"""
     chat_id = str(update.effective_chat.id)
@@ -3684,6 +3917,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(response,
                                       reply_markup=reply_markup,
                                       parse_mode=ParseMode.MARKDOWN)
+                                      
+    # Callbacks para sistema /check
+    elif query.data.startswith('approve_check_'):
+        await handle_check_approval(query, context, True)
+        
+    elif query.data.startswith('reject_check_'):
+        await handle_check_approval(query, context, False)
     # Callback para regenerar tarjetas
     elif query.data.startswith('regen_'):
         _, bin_number, count, preset_month, preset_year, preset_cvv = query.data.split(
@@ -3752,6 +3992,112 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(response, parse_mode=ParseMode.MARKDOWN)
 
+
+async def handle_check_approval(query, context, is_approved):
+    """Maneja la aprobación o rechazo de capturas por administradores"""
+    admin_id = str(query.from_user.id)
+    admin_user = query.from_user
+    
+    # Verificar que sea admin
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("❌ Solo administradores pueden aprobar/rechazar capturas", show_alert=True)
+        return
+    
+    # Extraer ID de verificación
+    check_id = query.data.split('_')[-1]
+    
+    # Obtener datos de la verificación
+    check_data = db.get_pending_check(check_id)
+    if not check_data:
+        await query.answer("❌ Verificación no encontrada o ya procesada", show_alert=True)
+        return
+    
+    if check_data['status'] != 'pending':
+        await query.answer("❌ Esta verificación ya fue procesada", show_alert=True)
+        return
+    
+    # Obtener configuración del grupo
+    group_id = check_data['group_id']
+    check_config = db.get_check_chats(group_id)
+    
+    if not check_config:
+        await query.answer("❌ Configuración de chats no encontrada", show_alert=True)
+        return
+    
+    user_id = check_data['user_id']
+    username = check_data['username']
+    user_data = db.get_user(user_id)
+    
+    if is_approved:
+        # APROBAR: Dar 6 créditos al usuario
+        new_credits = user_data['credits'] + 6
+        db.update_user(user_id, {'credits': new_credits})
+        db.update_check_status(check_id, 'approved', admin_id)
+        
+        # Actualizar mensaje de verificación
+        approval_text = f"✅ **CAPTURA APROBADA** ✅\n\n"
+        approval_text += f"🆔 **ID:** `{check_id}`\n"
+        approval_text += f"👤 **Usuario:** {username}\n"
+        approval_text += f"💰 **Créditos otorgados:** 6\n"
+        approval_text += f"📊 **Créditos totales:** {new_credits}\n"
+        approval_text += f"👮‍♂️ **Aprobado por:** {admin_user.first_name}\n"
+        approval_text += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        approval_text += f"🎉 **¡Felicidades al usuario por su captura válida!**"
+        
+        try:
+            await query.edit_message_caption(
+                caption=approval_text,
+                parse_mode=ParseMode.MARKDOWN)
+        except:
+            pass
+        
+        # Publicar en canal de publicaciones
+        try:
+            publication_chat_id = check_config['publication_chat']
+            
+            # Crear mensaje de publicación
+            publication_text = f"🏆 **CAPTURA VERIFICADA Y APROBADA** 🏆\n\n"
+            publication_text += f"👤 **Usuario:** {username}\n"
+            publication_text += f"✅ **Estado:** Verificado por administración\n"
+            publication_text += f"💰 **Recompensa:** 6 créditos otorgados\n"
+            publication_text += f"🆔 **Referencia:** `{check_id}`\n"
+            publication_text += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            publication_text += f"🎯 **¡Excelente trabajo! Sigue así para más recompensas!**\n"
+            publication_text += f"💡 **Usa /check para verificar tus capturas**"
+            
+            await context.bot.send_photo(
+                chat_id=publication_chat_id,
+                photo=check_data['image_file_id'],
+                caption=publication_text,
+                parse_mode=ParseMode.MARKDOWN)
+            
+        except Exception as e:
+            logger.error(f"Error publicando en canal: {e}")
+        
+        await query.answer("✅ Captura aprobada - 6 créditos otorgados", show_alert=True)
+        
+    else:
+        # RECHAZAR: Solo actualizar estado
+        db.update_check_status(check_id, 'rejected', admin_id)
+        
+        # Actualizar mensaje de verificación
+        rejection_text = f"❌ **CAPTURA RECHAZADA** ❌\n\n"
+        rejection_text += f"🆔 **ID:** `{check_id}`\n"
+        rejection_text += f"👤 **Usuario:** {username}\n"
+        rejection_text += f"💰 **Créditos:** Sin cambios ({user_data['credits']})\n"
+        rejection_text += f"👮‍♂️ **Rechazado por:** {admin_user.first_name}\n"
+        rejection_text += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        rejection_text += f"📝 **Motivo:** Captura no cumple con los criterios\n"
+        rejection_text += f"💡 **El usuario puede intentar con otra captura válida**"
+        
+        try:
+            await query.edit_message_caption(
+                caption=rejection_text,
+                parse_mode=ParseMode.MARKDOWN)
+        except:
+            pass
+        
+        await query.answer("❌ Captura rechazada - Sin recompensa", show_alert=True)
 
 async def handle_game_play(query, context, game_type):
     """Maneja la lógica de juegos con límite de 12 horas"""
@@ -3914,10 +4260,12 @@ def main():
     # Configuración del bot para evitar conflictos
     application = (Application.builder()
                    .token(BOT_TOKEN)
-                   .concurrent_updates(False)  # Cambiar a False para evitar conflictos
-                   .connect_timeout(30)
-                   .read_timeout(30)
-                   .write_timeout(30)
+                   .concurrent_updates(False)
+                   .connect_timeout(60)
+                   .read_timeout(60)  
+                   .write_timeout(60)
+                   .get_updates_connect_timeout(60)
+                   .get_updates_read_timeout(60)
                    .build())
 
     # Registrar comandos principales
@@ -3934,6 +4282,10 @@ def main():
     application.add_handler(CommandHandler("infocredits", infocredits_command))
     application.add_handler(CommandHandler("donate", donate_command))
     application.add_handler(CommandHandler("juegos", juegos_command))
+
+    # Sistema de verificación /check
+    application.add_handler(CommandHandler("check", check_command))
+    application.add_handler(CommandHandler("setcheckchats", setcheckchats_command))
 
     # Comandos de admin y staff
     application.add_handler(CommandHandler("staff", staff_command))
@@ -3971,12 +4323,17 @@ def main():
     try:
         application.run_polling(
             drop_pending_updates=True,  # Limpiar actualizaciones pendientes
-            close_loop=False
+            close_loop=False,
+            allowed_updates=None,  # Recibir todos los tipos de actualización
+            stop_signals=None  # Evitar conflictos de señales
         )
     except Exception as e:
         logger.error(f"Error en polling: {e}")
         print(f"❌ Error en el bot: {e}")
-        sys.exit(1)
+        # En lugar de salir, intentar reiniciar
+        import time
+        time.sleep(5)
+        main()
 
 
 if __name__ == "__main__":
