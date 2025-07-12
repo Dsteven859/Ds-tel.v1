@@ -1764,10 +1764,7 @@ def admin_only(func):
             await update.message.reply_text(
                 "❌ **ACCESO DENEGADO** ❌\n\n"
                 "🛡️ **Este comando requiere permisos de:**\n"
-                "• Administrador del bot\n"
-                "• Fundador/Co-fundador\n"
-                "• Administrador del grupo\n\n"
-                "💡 **Contacta a los administradores para obtener permisos**",
+                "• Administrador\n",
                 parse_mode=ParseMode.MARKDOWN)
             return
         return await func(update, context)
@@ -1918,10 +1915,10 @@ def bot_admin_only(func):
             await update.message.reply_text(
                 "❌ **ACCESO ULTRA RESTRINGIDO** ❌\n\n"
                 "🔒 **Este comando es EXCLUSIVO para:**\n"
-                "• Administradores principales del bot\n"
+                "• Administradores principales\n"
                 "• Fundadores del sistema\n\n"
-                "🚫 **Los administradores de grupo NO tienen acceso**\n"
-                "💡 **Contacta a @SteveCHBll para permisos especiales**",
+                "🚫 **No tienes acceso**\n"
+                "💡 **Contacta a @SteveCHRB para permisos especiales**",
                 parse_mode=ParseMode.MARKDOWN)
             return
         return await func(update, context)
@@ -2041,7 +2038,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = "╔═══════════════════════════════╗\n"
     welcome_text += "║  🔥 CHERNOBIL CHLV 🔥  ║\n"
     welcome_text += "╚═══════════════════════════════╝\n\n"
-    welcome_text += f"👋 ¡Bienvenido {update.effective_user.first_name}!\n\n"
+    welcome_text += f"👋 ¡Bienvenid@ {update.effective_user.first_name}!\n\n"
     welcome_text += f"💳 Créditos: {user_data['credits'] if not is_admin else '∞ (Admin)'}\n"
 
     if user_data['premium']:
@@ -2667,17 +2664,16 @@ async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "║  🔒 **ACCESO RESTRINGIDO** 🔒  ║\n"
             "╚═════════════════════════════╝\n\n"
             "👑 **Este comando es EXCLUSIVO para:**\n"
-            "• 🛡️ Administradores del bot\n"
             "• 💎 Usuarios con membresía PREMIUM\n\n"
             "🚫 **Tu cuenta:** Usuario estándar\n"
             "💡 **Para acceder necesitas:**\n\n"
             "💎 **Beneficios premium:**\n"
             "• ✅ Extrapolación avanzada ilimitada\n"
             "• ✅ Algoritmos de IA únicos\n"
-            "• ✅ Mayor efectividad (75-85%)\n"
+            "• ✅ Mayor efectividad ALTA\n"
             "• ✅ Reconoce múltiples formatos\n"
             "• ✅ Créditos adicionales\n\n"
-            "💰 **Consultar precios:** Contacta un admin",
+            "💰 **Consultar precios:** @SteveCHRB",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -3136,14 +3132,9 @@ async def pasarela_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
     if not args:
-        response = f"🔍 **DETECTOR DE PASARELAS ULTRA** 🔍\n\n"
+        response = f"🔍 **DETECTOR DE PASARELAS CHLV** 🔍\n\n"
         response += f"**Uso:** `/pasarela [URL]`\n\n"
-        response += f"**Ejemplos:**\n"
-        response += f"• `/pasarela amazon.com`\n"
-        response += f"• `/pasarela https://shopify.com`\n"
-        response += f"• `/pasarela stripe.com`\n"
-        response += f"• `/pasarela mercadolibre.com`\n\n"
-        response += f"🎯 **Funciones Ultra:**\n"
+        response += f"🎯 **Funciones CHLV:**\n"
         response += f"• Detecta 40+ pasarelas de pago\n"
         response += f"• Análisis inteligente de contenido\n"
         response += f"• Soporte para e-commerce latinoamericano\n"
@@ -3876,13 +3867,9 @@ async def staff_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• Puede administrar usuarios\n"
             f"• Puede usar /clean, /ban, /warn\n\n"
             f"**🔹 NIVEL 3 - MODERADOR:**\n"
-            f"• Solo puede dar 2 /warn máximo\n"
             f"• Funciones básicas de supervisión\n"
             f"• Acceso limitado\n\n"
-            f"**Comandos:**\n"
-            f"• `/staff add [user_id] [nivel]` - Asignar rol\n"
-            f"• `/staff remove [user_id]` - Quitar rol\n"
-            f"• `/staff list` - Ver lista de staff",
+            f"**Comandos:**\n",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -4316,12 +4303,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🔍 **INFORMACIÓN DE USUARIO** 🔍\n\n"
             "**Uso:** `/id [user_id]`\n"
-            "**Ejemplo:** `/id 123456789`\n\n"
-            "📋 **Información disponible:**\n"
-            "• Datos del usuario\n"
-            "• Actividad y estadísticas\n"
-            "• Estado de cuenta\n"
-            "• Historial de advertencias",
+            "**Ejemplo:** `/id 123456789`\n\n",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -4367,7 +4349,6 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response += f"⚠️ **Advertencias:** {warns}/3 {risk_emoji}\n\n"
     response += f"📊 **Actividad total:** {user_data['total_generated'] + user_data['total_checked']:,}\n"
     response += f"⏰ **Último bono:** {user_data.get('last_bonus', 'Nunca')[:10] if user_data.get('last_bonus') else 'Nunca'}\n\n"
-    response += f"🛠️ **Para staff:** `/ban` `/warn` `/premium` `/unwarn`"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -6278,8 +6259,7 @@ async def startfoundress_command(update: Update,
             "❌ **ACCESO DENEGADO** ❌\n\n"
             "🔒 **Este comando es EXCLUSIVO para:**\n"
             "• 👑 Fundadores únicamente\n\n"
-            "🚫 **Tu rol actual:** No autorizado\n"
-            "💡 **Contacta a un fundador para obtener permisos**",
+            "🚫 **Tu rol actual:** No autorizado\n",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -6408,8 +6388,7 @@ async def startmoderator_command(update: Update,
             "• 👑 Fundadores\n"
             "• 💎 Co-fundadores\n"
             "• 🛡️ Moderadores\n\n"
-            "🚫 **Tu rol actual:** Usuario estándar\n"
-            "💡 **Contacta al staff para obtener permisos**",
+            "🚫 **Tu rol actual:** Usuario estándar\n",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -6475,7 +6454,7 @@ async def moderation_master_command(update: Update,
         await update.message.reply_text(
             "🚨 **ACCESO ULTRA RESTRINGIDO** 🚨\n\n"
             "⛔ **COMANDO CLASIFICADO**\n"
-            "🔒 **SOLO FUNDADORES NIVEL 1**\n\n"
+            "🔒 **SOLO FUNDADORES**\n\n"
             "🚫 **ACCESO DENEGADO PERMANENTEMENTE**\n\n"
             "📝 **Este intento ha sido registrado**",
             parse_mode=ParseMode.MARKDOWN)
@@ -6578,11 +6557,8 @@ async def creditcleaningworld_command(update: Update,
         await update.message.reply_text(
             "❌ **ACCESO ULTRA RESTRINGIDO** ❌\n\n"
             "🔒 **Este comando es EXCLUSIVO para:**\n"
-            "• 👑 Fundadores (Nivel 1) únicamente\n\n"
-            "🚫 **No autorizado para:**\n"
-            "• Co-fundadores\n"
-            "• Moderadores\n"
-            "• Administradores de grupo\n\n"
+            "• 👑 Fundadores únicamente\n\n"
+            "🚫 **No autorizado**\n"
             "⚠️ **Razón:** Comando crítico de moderación\n"
             "💡 **Contacta a un fundador para esta operación**",
             parse_mode=ParseMode.MARKDOWN)
@@ -7448,7 +7424,7 @@ async def welcome_new_member(update: Update,
             # Fallback sin formato si hay error de parsing
             simple_welcome = f"🎉 ¡BIENVENIDO A CHERNOBYL CHLV! 🎉\n\n"
             simple_welcome += f"👋 Hola {user_name}\n\n"
-            simple_welcome += f"🔥 ¡Te damos la bienvenida al mejor bot de CCs!\n\n"
+            simple_welcome += f"🔥 ¡Te damos la bienvenida!\n\n"
             simple_welcome += f"💡 Para empezar:\n"
             simple_welcome += f"• Usa /start para ver todos los comandos\n"
             simple_welcome += f"• Obtén créditos gratis con /bonus\n"
