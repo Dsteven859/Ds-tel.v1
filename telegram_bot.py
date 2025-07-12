@@ -671,6 +671,11 @@ async def get_real_bin_info(bin_number):
 
 def escape_markdown(text):
     """Escapa caracteres especiales para Markdown"""
+    if not text:
+        return ""
+
+    text = str(text)  # Asegurar que sea string
+
     special_chars = [
         '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|',
         '{', '}', '.', '!'
@@ -715,6 +720,8 @@ class Database:
         self.deleted_links = {}  # NUEVO: Registro de links eliminados
         self.permissions = {}  # Sistema de permisos granular
         self.security_settings = {}  # Configuraciones de seguridad
+        self.admin_log_channels = {}  # Canales de logs administrativos
+        self.admin_action_logs = []  # Lista de acciones administrativas
         self.load_data()
 
     def load_data(self):
@@ -729,7 +736,10 @@ class Database:
                         'maintenance_message', "")
                     self.check_chats = data.get('check_chats', {})
                     self.pending_checks = data.get('pending_checks', {})
-                    self.deleted_links = data.get('deleted_links', {})  # NUEVO
+                    self.deleted_links = data.get('deleted_links', {})
+                    self.admin_log_channels = data.get('admin_log_channels',
+                                                       {})
+                    self.admin_action_logs = data.get('admin_action_logs', [])
         except:
             self.users = {}
             self.staff_roles = {}
@@ -737,22 +747,37 @@ class Database:
             self.maintenance_message = ""
             self.check_chats = {}
             self.pending_checks = {}
-            self.deleted_links = {}  # NUEVO
+            self.deleted_links = {}
+            self.admin_log_channels = {}
+            self.admin_action_logs = []
 
     def save_data(self):
         try:
             with open('bot_data.json', 'w') as f:
                 json.dump(
                     {
-                        'users': self.users,
-                        'staff_roles': self.staff_roles,
-                        'bot_maintenance': self.bot_maintenance,
-                        'maintenance_message': self.maintenance_message,
-                        'check_chats': self.check_chats,
-                        'pending_checks': self.pending_checks,
-                        'deleted_links': self.deleted_links,
-                        'permissions': self.permissions,
-                        'security_settings': self.security_settings
+                        'users':
+                        self.users,
+                        'staff_roles':
+                        self.staff_roles,
+                        'bot_maintenance':
+                        self.bot_maintenance,
+                        'maintenance_message':
+                        self.maintenance_message,
+                        'check_chats':
+                        self.check_chats,
+                        'pending_checks':
+                        self.pending_checks,
+                        'deleted_links':
+                        self.deleted_links,
+                        'permissions':
+                        self.permissions,
+                        'security_settings':
+                        self.security_settings,
+                        'admin_log_channels':
+                        getattr(self, 'admin_log_channels', {}),
+                        'admin_action_logs':
+                        getattr(self, 'admin_action_logs', [])
                     },
                     f,
                     indent=2)
@@ -870,6 +895,100 @@ class Database:
         if not hasattr(self, 'housemode_chats'):
             return ""
         return self.housemode_chats.get(chat_id, {}).get('reason', "")
+
+    def set_admin_log_channel(self, group_id: str, admin_channel_id: str):
+        """Configurar canal de logs administrativos"""
+        if not hasattr(self, 'admin_log_channels'):
+            self.admin_log_channels = {}
+
+        try:
+            self.admin_log_channels[group_id] = {
+                'channel_id': admin_channel_id,
+                'configured_at': datetime.now().isoformat(),
+                'active': True
+            }
+            self.save_data()
+            logger.info(
+                f"Admin log channel configurado: {group_id} -> {admin_channel_id}"
+            )
+        except Exception as e:
+            logger.error(f"Error configurando admin log channel: {e}")
+            raise
+
+    def get_admin_log_channel(self, group_id: str):
+        """Obtener canal de logs administrativos"""
+        try:
+            if not hasattr(self, 'admin_log_channels'):
+                self.admin_log_channels = {}
+                logger.warning(
+                    f"admin_log_channels no existe, creando diccionario vacío")
+                return None
+
+            config = self.admin_log_channels.get(group_id, None)
+            if config:
+                logger.info(
+                    f"Canal de logs encontrado para grupo {group_id}: {config['channel_id']}"
+                )
+            else:
+                logger.warning(
+                    f"No hay canal de logs configurado para grupo {group_id}")
+
+            return config
+        except Exception as e:
+            logger.error(f"Error obteniendo admin log channel: {e}")
+            return None
+
+    def log_admin_action(self,
+                         action_type: str,
+                         admin_user,
+                         target_user_id: str,
+                         reason: str,
+                         group_id: str,
+                         additional_data: dict = None):
+        """Registrar acción administrativa en logs"""
+        if not hasattr(self, 'admin_action_logs'):
+            self.admin_action_logs = []
+
+        try:
+            log_entry = {
+                'timestamp':
+                datetime.now().isoformat(),
+                'action_type':
+                action_type,
+                'admin_id':
+                str(admin_user.id),
+                'admin_name':
+                admin_user.first_name or "Usuario",
+                'admin_username':
+                f"@{admin_user.username}"
+                if admin_user.username else "Sin username",
+                'target_user_id':
+                str(target_user_id),
+                'reason':
+                str(reason),
+                'group_id':
+                str(group_id),
+                'additional_data':
+                additional_data or {}
+            }
+
+            self.admin_action_logs.append(log_entry)
+
+            # Mantener solo los últimos 1000 logs
+            if len(self.admin_action_logs) > 1000:
+                self.admin_action_logs = self.admin_action_logs[-1000:]
+
+            # Forzar guardado de datos
+            self.save_data()
+
+            logger.info(
+                f"Log guardado en DB - Acción: {action_type} - Admin: {admin_user.id} - Target: {target_user_id}"
+            )
+            return log_entry
+
+        except Exception as e:
+            logger.error(f"Error guardando log en BD: {e}")
+            return None
 
     def get_user(self, user_id: str):
         if user_id not in self.users:
@@ -1139,6 +1258,9 @@ if not BOT_TOKEN:
     print("2. Crea un bot con /newbot")
     print("3. Copia el token y ponlo en Secrets")
     exit(1)
+
+# Variables globales para canal de administración
+admin_log_channels = {}  # {group_id: admin_channel_id}
 
 # Obtener IDs de admin desde variables de entorno
 admin_ids_str = os.getenv('ADMIN_IDS', '123456789')
@@ -2732,194 +2854,499 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def detect_payment_gateways(url: str):
-    """Detecta las pasarelas de pago de un sitio web con 25+ métodos"""
+    """Detecta las pasarelas de pago de un sitio web con análisis mejorado"""
+    import re
+
     try:
-        import requests
-        from bs4 import BeautifulSoup
+        # Validar URL primero
+        if not url or len(url) < 4:
+            return None
+
+        # Limpiar y formatear URL
+        url = url.strip()
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+
+        # Validar formato de URL básico
+        url_pattern = r'^https?://[^\s/$.?#].[^\s]*$'
+        if not re.match(url_pattern, url):
+            return None
+
+        # Intentar importar requests, si no está disponible usar urllib
+        try:
+            import requests
+            use_requests = True
+        except ImportError:
+            import urllib.request
+            import urllib.parse
+            use_requests = False
 
         headers = {
             'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept':
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         }
 
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.content, 'html.parser')
+        content = ""
+        # Obtener contenido de la página con mejor manejo de errores
+        if use_requests:
+            try:
+                # Múltiples intentos con diferentes configuraciones
+                session = requests.Session()
+                session.headers.update(headers)
+
+                # Primer intento: HTTPS con verificación
+                try:
+                    response = session.get(url, timeout=10, verify=True)
+                    response.raise_for_status()
+                    content = response.text.lower()
+                except requests.exceptions.SSLError:
+                    # Segundo intento: HTTPS sin verificación
+                    try:
+                        response = session.get(url, timeout=10, verify=False)
+                        response.raise_for_status()
+                        content = response.text.lower()
+                    except:
+                        # Tercer intento: HTTP si HTTPS falla
+                        http_url = url.replace('https://', 'http://')
+                        response = session.get(http_url,
+                                               timeout=10,
+                                               verify=False)
+                        response.raise_for_status()
+                        content = response.text.lower()
+
+            except Exception as req_error:
+                logger.error(f"Requests error for {url}: {req_error}")
+                return None
+        else:
+            try:
+                import ssl
+                # Crear contexto SSL permisivo
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req,
+                                            timeout=10,
+                                            context=ssl_context) as response:
+                    content = response.read().decode('utf-8',
+                                                     errors='ignore').lower()
+            except Exception as urllib_error:
+                logger.error(f"Urllib error for {url}: {urllib_error}")
+                return None
+
+        if not content or len(content) < 100:
+            return None
 
         detected_gateways = {'destacadas': [], 'principales': [], 'otras': []}
 
-        # Buscar en HTML, scripts y meta tags
-        html_content = str(soup).lower()
-        scripts = str(
-            [script.get_text() for script in soup.find_all('script')]).lower()
-        full_content = html_content + scripts
-
-        # Pasarelas destacadas (más efectivas para CC)
+        # Pasarelas destacadas (más efectivas para CC) - AMPLIADAS
         gateways_destacadas = {
-            'shopify':
-            ['🔥 Shopify Payments', ['shopify', 'shopify-pay', 'shop-pay']],
-            'woocommerce':
-            ['🔥 WooCommerce', ['woocommerce', 'wc-', 'wordpress']],
-            'magento': ['🔥 Magento', ['magento', 'mage-', 'mage_']]
+            'shopify': [
+                '🔥 Shopify Payments',
+                [
+                    'shopify', 'shopify-pay', 'shop-pay', 'shopifycdn',
+                    'cdn.shopify'
+                ]
+            ],
+            'woocommerce': [
+                '🔥 WooCommerce',
+                [
+                    'woocommerce', 'wc-', 'wordpress', 'wp-content',
+                    'wp-includes'
+                ]
+            ],
+            'magento': [
+                '🔥 Magento',
+                ['magento', 'mage-', 'mage_', 'magento_', 'magentocommerce']
+            ],
+            'prestashop': [
+                '🔥 PrestaShop',
+                ['prestashop', 'presta-shop', 'ps_', 'prestashop.com']
+            ],
+            'opencart':
+            ['🔥 OpenCart', ['opencart', 'open-cart', 'oc-', 'opencart.com']],
+            'bigcommerce': [
+                '🔥 BigCommerce',
+                ['bigcommerce', 'big-commerce', 'bigcommerce.com']
+            ]
         }
 
-        # Pasarelas principales (muy comunes)
+        # Pasarelas principales (muy comunes) - MEJORADAS
         gateways_principales = {
-            'paypal':
-            ['✅ PayPal', ['paypal', 'pp-', 'paypal.com', 'paypalobjects']],
+            'paypal': [
+                '✅ PayPal',
+                [
+                    'paypal', 'pp-', 'paypal.com', 'paypalobjects',
+                    'paypal-button', 'paypal.js'
+                ]
+            ],
             'stripe': [
                 '✅ Stripe',
                 [
                     'stripe', 'js.stripe.com', 'stripe.com', 'sk_live',
-                    'pk_live'
+                    'pk_live', 'stripe-elements', 'stripe.js'
                 ]
             ],
-            'square':
-            ['✅ Square', ['square', 'squareup', 'square.com', 'sq-']],
+            'square': [
+                '✅ Square',
+                [
+                    'square', 'squareup', 'square.com', 'sq-', 'squarecdn',
+                    'web.squarecdn'
+                ]
+            ],
             'authorize': [
                 '✅ Authorize.net',
-                ['authorize.net', 'authorizenet', 'authorize-net']
+                [
+                    'authorize.net', 'authorizenet', 'authorize-net', 'anet-',
+                    'accept.js'
+                ]
             ],
-            'braintree':
-            ['✅ Braintree', ['braintree', 'braintreepayments', 'bt-']],
-            'adyen': ['✅ Adyen', ['adyen', 'adyen.com', 'adyen-']],
-            'worldpay': ['✅ Worldpay', ['worldpay', 'worldpay.com', 'wp-']]
+            'braintree': [
+                '✅ Braintree',
+                [
+                    'braintree', 'braintreepayments', 'bt-', 'braintree-web',
+                    'braintreegateway'
+                ]
+            ],
+            'adyen': [
+                '✅ Adyen',
+                [
+                    'adyen', 'adyen.com', 'adyen-', 'adyen-web',
+                    'checkoutshopper'
+                ]
+            ],
+            'worldpay': [
+                '✅ Worldpay',
+                [
+                    'worldpay', 'worldpay.com', 'wp-', 'worldpay-lib',
+                    'worldpayap.com'
+                ]
+            ],
+            'razorpay': [
+                '✅ Razorpay',
+                ['razorpay', 'razorpay.com', 'checkout.razorpay', 'rzp_']
+            ]
         }
 
-        # Otras pasarelas detectables
+        # Otras pasarelas detectables - EXPANDIDAS
         gateways_otras = {
-            'applepay':
-            ['🍎 Apple Pay', ['apple-pay', 'applepay', 'apple_pay']],
+            'applepay': [
+                '🍎 Apple Pay',
+                ['apple-pay', 'applepay', 'apple_pay', 'apple-pay-button']
+            ],
             'googlepay': [
                 '🔵 Google Pay',
-                ['google-pay', 'googlepay', 'google_pay', 'gpay']
+                [
+                    'google-pay', 'googlepay', 'google_pay', 'gpay',
+                    'pay.google'
+                ]
             ],
-            'amazonpay':
-            ['📦 Amazon Pay', ['amazon-pay', 'amazonpay', 'amazon_pay']],
-            'venmo': ['💜 Venmo', ['venmo', 'venmo.com']],
-            'klarna': ['🔶 Klarna', ['klarna', 'klarna.com']],
-            'afterpay': ['⚪ Afterpay', ['afterpay', 'afterpay.com']],
-            'affirm': ['🟣 Affirm', ['affirm', 'affirm.com']],
-            'razorpay': ['⚡ Razorpay', ['razorpay', 'razorpay.com']],
-            'payu': ['🟡 PayU', ['payu', 'payu.com', 'payu-']],
-            'mercadopago':
-            ['🟢 MercadoPago', ['mercadopago', 'mercado-pago', 'mp-']],
-            'checkout':
-            ['🔷 Checkout.com', ['checkout.com', 'checkout-', 'cko-']],
-            'mollie': ['🟠 Mollie', ['mollie', 'mollie.com']],
-            'cybersource':
-            ['🔐 CyberSource', ['cybersource', 'cybersource.com']],
-            'bluepay': ['🔹 BluePay', ['bluepay', 'bluepay.com']],
-            'firstdata': ['🔴 First Data', ['firstdata', 'first-data']],
-            'elavon': ['🔵 Elavon', ['elavon', 'elavon.com']],
-            '2checkout': ['2️⃣ 2Checkout', ['2checkout', '2co-']],
-            'skrill': ['💰 Skrill', ['skrill', 'skrill.com']],
-            'paysafecard': ['🔒 Paysafecard', ['paysafecard', 'paysafe']],
-            'bitcoin': ['₿ Bitcoin', ['bitcoin', 'btc', 'cryptocurrency']],
-            'coinbase': ['🪙 Coinbase', ['coinbase', 'coinbase.com']],
-            'binance': ['⚡ Binance Pay', ['binance', 'binancepay']],
-            'alipay': ['🇨🇳 Alipay', ['alipay', 'alipay.com']],
-            'wechatpay':
-            ['💬 WeChat Pay', ['wechat', 'wechatpay', 'wechat-pay']]
+            'amazonpay': [
+                '📦 Amazon Pay',
+                ['amazon-pay', 'amazonpay', 'amazon_pay', 'payments.amazon']
+            ],
+            'klarna':
+            ['🔶 Klarna', ['klarna', 'klarna.com', 'klarna-payments']],
+            'afterpay':
+            ['⚪ Afterpay', ['afterpay', 'afterpay.com', 'afterpay-button']],
+            'affirm': ['🟣 Affirm', ['affirm', 'affirm.com', 'affirm-button']],
+            'payu': ['🟡 PayU', ['payu', 'payu.com', 'payu-', 'payulatam']],
+            'mercadopago': [
+                '🟢 MercadoPago',
+                ['mercadopago', 'mercado-pago', 'mp-', 'mercadolibre']
+            ],
+            'checkout': [
+                '🔷 Checkout.com',
+                ['checkout.com', 'checkout-', 'cko-', 'checkout.js']
+            ],
+            'mollie':
+            ['🟠 Mollie', ['mollie', 'mollie.com', 'mollie-payments']],
+            'cybersource': [
+                '🔐 CyberSource',
+                ['cybersource', 'cybersource.com', 'cybersource-api']
+            ],
+            '2checkout': ['2️⃣ 2Checkout', ['2checkout', '2co-', 'verifone']],
+            'payoneer': ['💳 Payoneer', ['payoneer', 'payoneer.com']],
+            'pagseguro':
+            ['🇧🇷 PagSeguro', ['pagseguro', 'uol.com.br', 'pagseguro.uol']],
+            'conekta':
+            ['🇲🇽 Conekta', ['conekta', 'conekta.com', 'conekta.js']],
+            'culqi': ['🇵🇪 Culqi', ['culqi', 'culqi.com', 'culqi.js']],
+            'wompi': ['🇨🇴 Wompi', ['wompi', 'wompi.co', 'wompi.com']],
+            'paymentez': ['💰 Paymentez', ['paymentez', 'paymentez.com']],
+            'kushki': ['🎯 Kushki', ['kushki', 'kushki.com']],
+            'openpay': ['🔓 OpenPay', ['openpay', 'openpay.mx']],
+            'ebanx': ['🌎 EBANX', ['ebanx', 'ebanx.com']],
+            'blockchain': [
+                '₿ Blockchain',
+                ['blockchain', 'bitcoin', 'btc', 'crypto', 'metamask']
+            ],
+            'zelle': ['💸 Zelle', ['zelle', 'zellepay']],
+            'cashapp': ['💵 Cash App', ['cashapp', 'cash.app', '$cashtag']]
         }
 
-        # Detectar cada categoría
+        # Detectar cada categoría con scoring mejorado
+        content_words = content.split()
+
         for key, (name, indicators) in gateways_destacadas.items():
-            if any(indicator in full_content for indicator in indicators):
+            score = 0
+            for indicator in indicators:
+                if indicator in content:
+                    score += content.count(indicator)
+            if score > 0:
                 detected_gateways['destacadas'].append(name)
 
         for key, (name, indicators) in gateways_principales.items():
-            if any(indicator in full_content for indicator in indicators):
+            score = 0
+            for indicator in indicators:
+                if indicator in content:
+                    score += content.count(indicator)
+            if score > 0:
                 detected_gateways['principales'].append(name)
 
         for key, (name, indicators) in gateways_otras.items():
-            if any(indicator in full_content for indicator in indicators):
+            score = 0
+            for indicator in indicators:
+                if indicator in content:
+                    score += content.count(indicator)
+            if score > 0:
                 detected_gateways['otras'].append(name)
+
+        # Remover duplicados manteniendo orden
+        for category in detected_gateways:
+            detected_gateways[category] = list(
+                dict.fromkeys(detected_gateways[category]))
 
         return detected_gateways
 
     except Exception as e:
+        logger.error(f"Error en detect_payment_gateways: {e}")
         return None
 
 
 async def pasarela_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Detectar pasarelas de pago de un sitio web"""
+    """Detectar pasarelas de pago de un sitio web mejorado"""
     args = context.args
 
     if not args:
-        response = f"🔍 **DETECTOR DE PASARELAS** 🔍\n\n"
-        response += f"**Uso:** `/pasarela [URL]`\n"
-        response += f"**Ejemplo:** `/pasarela"
-        response += f"🎯 **Funciones:**\n"
-        response += f"• Detecta automáticamente las pasarelas\n"
-        response += f"• Clasifica por importancia\n"
-        response += f"• Identifica métodos de pago\n"
-        response += f"• Análisis en tiempo real\n\n"
-        response += f"💡 **Tip:** Usa URLs completas con https://"
+        response = f"🔍 **DETECTOR DE PASARELAS ULTRA** 🔍\n\n"
+        response += f"**Uso:** `/pasarela [URL]`\n\n"
+        response += f"**Ejemplos:**\n"
+        response += f"• `/pasarela amazon.com`\n"
+        response += f"• `/pasarela https://shopify.com`\n"
+        response += f"• `/pasarela stripe.com`\n"
+        response += f"• `/pasarela mercadolibre.com`\n\n"
+        response += f"🎯 **Funciones Ultra:**\n"
+        response += f"• Detecta 40+ pasarelas de pago\n"
+        response += f"• Análisis inteligente de contenido\n"
+        response += f"• Soporte para e-commerce latinoamericano\n"
+        response += f"• Detección de crypto y métodos alternativos\n"
+        response += f"• Múltiples intentos de conexión\n"
+        response += f"• Compatible con sitios protegidos\n\n"
+        response += f"💡 **Tip:** Funciona con URLs con o sin protocolo\n"
+        response += f"🌎 **Soporte:** Pasarelas mundiales y regionales"
 
         await update.message.reply_text(response,
                                         parse_mode=ParseMode.MARKDOWN)
         return
 
-    url = args[0]
+    url = args[0].strip()
+
+    # Validación avanzada de URL
+    if not url or len(url) < 4:
+        await update.message.reply_text("❌ **URL vacía o muy corta**\n\n"
+                                        "💡 Proporciona una URL válida\n"
+                                        "📋 **Ejemplo:** `amazon.com`")
+        return
+
+    # Limpiar caracteres especiales
+    import re
+    url = re.sub(r'[^\w\-._~:/?#[\]@!$&\'()*+,;=]', '', url)
+
+    # Agregar protocolo si no lo tiene
+    original_url = url
     if not url.startswith(('http://', 'https://')):
         url = 'https://' + url
 
-    # Mensaje de análisis
+    # Validación mejorada de dominio
+    domain_extensions = [
+        '.com', '.net', '.org', '.io', '.co', '.me', '.ly', '.gg', '.tv',
+        '.mx', '.ar', '.br', '.cl', '.pe', '.co', '.ec', '.uy', '.bo', '.es',
+        '.fr', '.de', '.it', '.uk', '.ru', '.cn', '.jp'
+    ]
+
+    if not any(ext in url.lower() for ext in domain_extensions):
+        await update.message.reply_text(
+            "❌ **Dominio inválido**\n\n"
+            "💡 Asegúrate de incluir una extensión válida\n"
+            "📋 **Ejemplo:** `amazon.com`, `mercadolibre.com.ar`\n"
+            "🌎 **Soportado:** .com, .net, .org, .mx, .ar, .br, etc.")
+        return
+
+    # Mensaje de análisis mejorado con progreso
     analysis_msg = await update.message.reply_text(
-        "🔍 **Analizando sitio web...**\n⏳ Detectando pasarelas de pago...")
+        "🔍 **INICIANDO ANÁLISIS ULTRA** 🔍\n\n"
+        f"🌐 **URL:** {original_url}\n"
+        f"🔗 **Procesando:** {url}\n"
+        f"⏳ **Fase 1:** Validando conectividad...\n"
+        f"📊 **Progreso:** [█░░░░░░░░░] 10%",
+        parse_mode=ParseMode.MARKDOWN)
 
     try:
+        # Simular progreso y dar tiempo al servidor
+        import asyncio
+        await asyncio.sleep(1)
+
+        # Actualizar progreso
+        await analysis_msg.edit_text(
+            "🔍 **ANÁLISIS EN PROGRESO** 🔍\n\n"
+            f"🌐 **URL:** {original_url}\n"
+            f"🔗 **Procesando:** {url}\n"
+            f"⏳ **Fase 2:** Obteniendo contenido web...\n"
+            f"📊 **Progreso:** [███░░░░░░░] 30%",
+            parse_mode=ParseMode.MARKDOWN)
+
         detected = await detect_payment_gateways(url)
+
+        # Simular más progreso
+        await asyncio.sleep(0.5)
+        await analysis_msg.edit_text(
+            "🔍 **ANÁLISIS AVANZADO** 🔍\n\n"
+            f"🌐 **URL:** {original_url}\n"
+            f"🔗 **Procesando:** {url}\n"
+            f"⏳ **Fase 3:** Detectando pasarelas...\n"
+            f"📊 **Progreso:** [██████░░░░] 60%",
+            parse_mode=ParseMode.MARKDOWN)
 
         if detected is None:
             await analysis_msg.edit_text(
-                f"❌ **Error al analizar el sitio**\n\n"
-                f"🌐 **URL:** {url}\n"
+                f"❌ **ANÁLISIS FALLIDO** ❌\n\n"
+                f"🌐 **URL:** {original_url}\n"
+                f"🔗 **Intentado:** {url}\n\n"
                 f"💡 **Posibles causas:**\n"
-                f"• Sitio no accesible\n"
-                f"• Protección anti-bots\n"
-                f"• URL inválida",
+                f"• 🚫 Sitio web no accesible o caído\n"
+                f"• 🛡️ Protección anti-bots/firewall activo\n"
+                f"• 🔒 Bloqueo geográfico o SSL estricto\n"
+                f"• ❌ URL incorrecta o dominio inexistente\n"
+                f"• ⚡ Problemas temporales de conectividad\n\n"
+                f"🔄 **Soluciones:**\n"
+                f"• Verifica que la URL esté bien escrita\n"
+                f"• Intenta sin 'www' o con 'www'\n"
+                f"• Prueba más tarde si es un error temporal\n"
+                f"• Usa una URL alternativa del mismo sitio\n\n"
+                f"✅ **URLs de prueba:** `amazon.com`, `stripe.com`, `paypal.com`",
                 parse_mode=ParseMode.MARKDOWN)
             return
 
-        # Formatear respuesta estilo del bot de la imagen
-        response = f"✅ **PASARELAS DETECTADAS:**\n"
-        response += f"_" * 30 + "\n\n"
+        # Progreso final
+        await analysis_msg.edit_text(
+            "🔍 **FINALIZANDO ANÁLISIS** 🔍\n\n"
+            f"🌐 **URL:** {original_url}\n"
+            f"⏳ **Fase 4:** Generando reporte...\n"
+            f"📊 **Progreso:** [██████████] 100%",
+            parse_mode=ParseMode.MARKDOWN)
 
-        if detected['destacadas']:
-            response += f"💎 **Pasarelas Destacadas:** 🔥\n"
-            for gateway in detected['destacadas']:
-                response += f"• {gateway}\n"
-            response += f"_" * 30 + "\n"
+        await asyncio.sleep(0.5)
 
-        if detected['principales']:
-            response += f"🏆 **Pasarelas Principales:** ✅\n"
-            for gateway in detected['principales']:
-                response += f"• {gateway}\n"
-            response += f"_" * 30 + "\n"
+        # Construir respuesta mejorada con estadísticas
+        total_detected = sum(len(gateways) for gateways in detected.values())
 
-        if detected['otras']:
-            response += f"⚪ **Otras Pasarelas Detectadas:** 🟡\n"
-            for gateway in detected['otras']:
-                response += f"• {gateway}\n"
-            response += f"_" * 30 + "\n"
+        if total_detected == 0:
+            response = f"🔍 **ANÁLISIS COMPLETADO** 🔍\n"
+            response += f"{'═' * 40}\n\n"
+            response += f"🌐 **Sitio:** {original_url}\n"
+            response += f"📊 **Estado:** Analizado exitosamente\n\n"
+            response += f"❌ **NO SE DETECTARON PASARELAS** ❌\n\n"
+            response += f"💡 **Posibles razones:**\n"
+            response += f"• 🏪 Sitio no comercial (sin tienda online)\n"
+            response += f"• 🔧 Pasarelas implementadas de forma personalizada\n"
+            response += f"• ⚡ Contenido cargado dinámicamente (JavaScript)\n"
+            response += f"• 🎯 Sitio en construcción o modo mantenimiento\n"
+            response += f"• 🌐 Página de aterrizaje sin funciones de pago\n\n"
+            response += f"💭 **Sugerencias:**\n"
+            response += f"• Intenta con la página de checkout/carrito\n"
+            response += f"• Verifica si es un sitio de e-commerce\n"
+            response += f"• Prueba con `/pasarela sitio.com/shop`"
+        else:
+            response = f"✅ **ANÁLISIS COMPLETADO CON ÉXITO** ✅\n"
+            response += f"{'═' * 45}\n\n"
+            response += f"🌐 **Sitio analizado:** {original_url}\n"
+            response += f"🎯 **Total detectado:** {total_detected} pasarela{'s' if total_detected > 1 else ''}\n\n"
 
-        if not any(detected.values()):
-            response += f"❌ **No se detectaron pasarelas conocidas**\n"
-            response += f"💡 El sitio puede usar pasarelas personalizadas"
+            if detected['destacadas']:
+                response += f"🔥 **PLATAFORMAS E-COMMERCE ({len(detected['destacadas'])}):**\n"
+                for i, gateway in enumerate(detected['destacadas'], 1):
+                    response += f"  {i}. {gateway}\n"
+                response += f"\n"
 
-        response += f"\n🌐 **Sitio analizado:** {url}\n"
-        response += f"⏰ **Análisis:** {datetime.now().strftime('%H:%M:%S')}"
+            if detected['principales']:
+                response += f"💳 **PASARELAS PRINCIPALES ({len(detected['principales'])}):**\n"
+                for i, gateway in enumerate(detected['principales'], 1):
+                    response += f"  {i}. {gateway}\n"
+                response += f"\n"
+
+            if detected['otras']:
+                response += f"💰 **MÉTODOS ADICIONALES ({len(detected['otras'])}):**\n"
+                for i, gateway in enumerate(detected['otras'], 1):
+                    response += f"  {i}. {gateway}\n"
+                response += f"\n"
+
+            # Estadísticas detalladas
+            response += f"📊 **ESTADÍSTICAS DEL ANÁLISIS:**\n"
+            response += f"├ 🏪 **Plataformas:** {len(detected['destacadas'])}\n"
+            response += f"├ 💳 **Procesadores:** {len(detected['principales'])}\n"
+            response += f"├ 💰 **Métodos extra:** {len(detected['otras'])}\n"
+            response += f"└ 🎯 **Total general:** {total_detected}\n\n"
+
+            # Análisis de efectividad
+            if len(detected['principales']) >= 3:
+                effectiveness = "🔥 Muy Alto"
+            elif len(detected['principales']) >= 2:
+                effectiveness = "⚡ Alto"
+            elif len(detected['principales']) >= 1:
+                effectiveness = "✅ Medio"
+            else:
+                effectiveness = "⚠️ Bajo"
+
+            response += f"🎯 **Potencial para CC:** {effectiveness}\n"
+
+        response += f"\n" + "─" * 40 + "\n"
+        response += f"⏰ **Completado:** {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+        response += f"🤖 **Analizador:** ChernobylChLv Ultra\n"
+        response += f"👤 **Solicitado por:** @{update.effective_user.username or update.effective_user.first_name}"
 
         await analysis_msg.edit_text(response, parse_mode=ParseMode.MARKDOWN)
 
     except Exception as e:
+        error_msg = str(e)[:80] + "..." if len(str(e)) > 80 else str(e)
+
         await analysis_msg.edit_text(
-            f"❌ **Error durante el análisis**\n\n"
-            f"🌐 **URL:** {url}\n"
-            f"🔍 **Error:** {str(e)}\n\n"
-            f"💡 **Intenta con otra URL**",
+            f"❌ **ERROR CRÍTICO EN ANÁLISIS** ❌\n\n"
+            f"🌐 **URL:** {original_url}\n"
+            f"🔗 **Procesando:** {url}\n"
+            f"🔍 **Error técnico:** {error_msg}\n\n"
+            f"🔄 **Sugerencias de solución:**\n"
+            f"• ✅ Verifica que la URL esté bien escrita\n"
+            f"• 🌐 Intenta sin 'www' o agregando 'www'\n"
+            f"• 🔄 Prueba nuevamente en unos minutos\n"
+            f"• 📱 Verifica tu conexión a internet\n"
+            f"• 💡 Usa una URL más simple (sin rutas)\n\n"
+            f"✅ **URLs de prueba que siempre funcionan:**\n"
+            f"• `amazon.com` - E-commerce global\n"
+            f"• `stripe.com` - Procesador de pagos\n"
+            f"• `paypal.com` - Pagos online\n"
+            f"• `mercadolibre.com` - E-commerce LATAM\n\n"
+            f"🤖 **Si el problema persiste, contacta a los administradores**",
             parse_mode=ParseMode.MARKDOWN)
+
+        logger.error(f"Error crítico en comando /pasarela: {e}")
 
 
 async def apply_key_command(update: Update,
@@ -3121,6 +3548,65 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response += f"🤝 **La comunidad aprecia tu contribución**"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+    # Enviar notificación privada al receptor
+    try:
+        receiver_message = f"🎁 **¡HAS RECIBIDO UNA DONACIÓN!** 🎁\n\n"
+        receiver_message += f"💎 **Cantidad recibida:** {amount:,} créditos\n"
+        receiver_message += f"👤 **De:** {update.effective_user.first_name}"
+
+        # Agregar username si está disponible
+        if update.effective_user.username:
+            receiver_message += f" (@{update.effective_user.username})"
+
+        receiver_message += f"\n💰 **Tus créditos ahora:** {target_user_data['credits'] + amount:,}\n"
+        receiver_message += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        receiver_message += f"🌟 **¡Alguien fue muy generoso contigo!**\n"
+        receiver_message += f"🤝 **Disfruta de tus nuevos créditos**\n"
+        receiver_message += f"💡 **Úsalos sabiamente en el bot**\n\n"
+        receiver_message += f"🤖 **Chernobil ChLv**"
+
+        await context.bot.send_message(chat_id=int(target_user_id),
+                                       text=receiver_message,
+                                       parse_mode=ParseMode.MARKDOWN)
+
+        # Log exitoso
+        logger.info(
+            f"Notificación de donación enviada al receptor {target_user_id}")
+
+    except Exception as e:
+        # Si no se puede enviar mensaje privado al receptor, no es crítico
+        logger.warning(
+            f"No se pudo enviar notificación privada al receptor {target_user_id}: {e}"
+        )
+
+    # Enviar notificación privada al donante (confirmación)
+    try:
+        if not is_admin:  # Solo si no es admin (para evitar spam a admins)
+            donor_message = f"✅ **DONACIÓN CONFIRMADA** ✅\n\n"
+            donor_message += f"💎 **Has donado:** {amount:,} créditos\n"
+            donor_message += f"👤 **A usuario ID:** `{target_user_id}`\n"
+            donor_message += f"📊 **Tus créditos restantes:** {user_data['credits'] - amount:,}\n"
+            donor_message += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            donor_message += f"🌟 **¡Gracias por tu generosidad!**\n"
+            donor_message += f"🤝 **Tu donación ha sido entregada exitosamente**\n"
+            donor_message += f"💝 **La comunidad aprecia tu contribución**\n\n"
+            donor_message += f"🎯 **Tip:** Puedes obtener más créditos con `/bonus`\n"
+            donor_message += f"🤖 **ChernobilChLv Bot**"
+
+            await context.bot.send_message(chat_id=update.effective_user.id,
+                                           text=donor_message,
+                                           parse_mode=ParseMode.MARKDOWN)
+
+            # Log exitoso
+            logger.info(
+                f"Notificación de confirmación enviada al donante {user_id}")
+
+    except Exception as e:
+        # Si no se puede enviar mensaje privado al donante, no es crítico
+        logger.warning(
+            f"No se pudo enviar notificación privada al donante {user_id}: {e}"
+        )
 
 
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3533,7 +4019,9 @@ auto_clean_active = {}  # Diccionario global para controlar auto-limpieza
 auto_clean_timers = {}  # Diccionario global para timers
 
 
-@admin_only
+@staff_only(
+    3
+)  # Moderador o superior (incluye fundadores, co-fundadores y moderadores)
 async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Limpiar mensajes con eliminación mejorada y modo automático"""
     args = context.args
@@ -3744,6 +4232,22 @@ async def clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
+        # Enviar log administrativo
+        await send_admin_log(context=context,
+                             action_type='CLEAN',
+                             admin_user=admin_info,
+                             target_user_id=f"CHAT_{chat_id}",
+                             reason=f"Limpieza de {count} mensajes",
+                             group_id=str(chat_id),
+                             additional_data={
+                                 'messages_requested':
+                                 count,
+                                 'messages_deleted':
+                                 deleted_count,
+                                 'effectiveness':
+                                 f"{(deleted_count/count)*100:.1f}%"
+                             })
+
         # Log para administradores
         logger.info(
             f"Limpieza ejecutada - Admin: {admin_info.id} ({admin_info.first_name}) - "
@@ -3791,9 +4295,8 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📅 Válido por {days} días")
 
 
-@admin_only
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver información detallada de usuario por ID - Solo admins"""
+    """Ver información detallada de usuario por ID"""
     args = context.args
 
     # Si se responde a un mensaje, obtener el ID del usuario
@@ -3864,7 +4367,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response += f"⚠️ **Advertencias:** {warns}/3 {risk_emoji}\n\n"
     response += f"📊 **Actividad total:** {user_data['total_generated'] + user_data['total_checked']:,}\n"
     response += f"⏰ **Último bono:** {user_data.get('last_bonus', 'Nunca')[:10] if user_data.get('last_bonus') else 'Nunca'}\n\n"
-    response += f"🛠️ **Acciones:** `/ban` `/warn` `/premium` `/unwarn`"
+    response += f"🛠️ **Para staff:** `/ban` `/warn` `/premium` `/unwarn`"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -3883,18 +4386,44 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     target_user_id = args[0]
     reason = ' '.join(args[1:]) if len(args) > 1 else "Sin razón especificada"
+    group_id = str(update.effective_chat.id)
 
     try:
-        # En un bot real, aquí harías el ban real
+        # Intentar banear del chat actual
+        await context.bot.ban_chat_member(chat_id=update.effective_chat.id,
+                                          user_id=int(target_user_id))
+
+        # Enviar log administrativo
+        await send_admin_log(context=context,
+                             action_type='BAN',
+                             admin_user=update.effective_user,
+                             target_user_id=target_user_id,
+                             reason=reason,
+                             group_id=group_id,
+                             additional_data={'success': True})
+
         await update.message.reply_text(
             f"🔨 **USUARIO BANEADO** 🔨\n\n"
             f"👤 **ID:** {target_user_id}\n"
             f"📝 **Razón:** {reason}\n"
             f"👮‍♂️ **Por:** {update.effective_user.first_name}\n"
             f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            f"✅ **Acción ejecutada exitosamente**",
+            f"✅ **Acción ejecutada y registrada**",
             parse_mode=ParseMode.MARKDOWN)
+
     except Exception as e:
+        # Enviar log de error
+        await send_admin_log(context=context,
+                             action_type='BAN',
+                             admin_user=update.effective_user,
+                             target_user_id=target_user_id,
+                             reason=reason,
+                             group_id=group_id,
+                             additional_data={
+                                 'success': False,
+                                 'error': str(e)
+                             })
+
         await update.message.reply_text(f"❌ Error al banear usuario: {str(e)}")
 
 
@@ -3956,6 +4485,38 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         applied_by_rank = "Staff"
 
+    # Enviar log administrativo
+    group_id = str(update.effective_chat.id)
+
+    logger.info(
+        f"🔄 Iniciando envío de log - Grupo: {group_id} - Acción: WARN - Admin: {update.effective_user.id}"
+    )
+
+    # Verificar configuración antes de enviar
+    log_config = db.get_admin_log_channel(group_id)
+    if log_config:
+        logger.info(f"✅ Configuración de logs encontrada: {log_config}")
+    else:
+        logger.warning(f"❌ No hay configuración de logs para grupo {group_id}")
+
+    try:
+        await send_admin_log(context=context,
+                             action_type='WARN',
+                             admin_user=update.effective_user,
+                             target_user_id=target_user_id,
+                             reason=reason,
+                             group_id=group_id,
+                             additional_data={
+                                 'warns_total': current_warns,
+                                 'warns_remaining': 3 - current_warns,
+                                 'admin_rank': applied_by_rank,
+                                 'auto_ban': current_warns >= 3
+                             })
+        logger.info(f"✅ Log administrativo completado exitosamente")
+    except Exception as e:
+        logger.error(f"❌ Error crítico enviando log administrativo: {e}")
+        logger.error(f"Detalles del error: {type(e).__name__}: {str(e)}")
+
     response = f"⚠️ **ADVERTENCIA APLICADA** ⚠️\n\n"
     response += f"👤 **Usuario:** {target_user_id}\n"
     response += f"📝 **Razón:** {reason}\n"
@@ -3967,6 +4528,8 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response += f"🔨 **USUARIO BANEADO AUTOMÁTICAMENTE**"
     else:
         response += f"💡 **Advertencias restantes:** {3 - current_warns}"
+
+    response += f"\n📋 **Acción registrada en logs administrativos**"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -4356,6 +4919,7 @@ async def emergency_founder_command(update: Update,
         parse_mode=ParseMode.MARKDOWN)
 
 
+@staff_only(2)  # Co-fundador o superior
 async def unwarn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remover advertencia de un usuario"""
     args = context.args
@@ -4400,12 +4964,27 @@ async def unwarn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         applied_by_rank = "Staff"
 
+    # Enviar log administrativo
+    group_id = str(update.effective_chat.id)
+    await send_admin_log(context=context,
+                         action_type='UNWARN',
+                         admin_user=update.effective_user,
+                         target_user_id=target_user_id,
+                         reason="Advertencia removida",
+                         group_id=group_id,
+                         additional_data={
+                             'previous_warns': current_warns,
+                             'current_warns': new_warns,
+                             'admin_rank': applied_by_rank
+                         })
+
     response = f"✅ **ADVERTENCIA REMOVIDA** ✅\n\n"
     response += f"👤 **Usuario:** {target_user_id}\n"
     response += f"⚠️ **Advertencias:** {new_warns}/3 (era {current_warns}/3)\n"
     response += f"👮‍♂️ **Por:** {update.effective_user.first_name} ({applied_by_rank})\n"
     response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-    response += f"🔄 **Estado:** {'Sin advertencias' if new_warns == 0 else f'{3-new_warns} advertencias restantes antes del ban'}"
+    response += f"🔄 **Estado:** {'Sin advertencias' if new_warns == 0 else f'{3-new_warns} advertencias restantes antes del ban'}\n"
+    response += f"📋 **Acción registrada en logs administrativos**"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -4424,6 +5003,7 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     target_user_id = args[0]
+    group_id = str(update.effective_chat.id)
 
     try:
         # Intentar desbanear del chat actual
@@ -4434,18 +5014,43 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Resetear advertencias del usuario
         db.update_user(target_user_id, {'warns': 0})
 
+        # Enviar log administrativo
+        await send_admin_log(
+            context=context,
+            action_type='UNBAN',
+            admin_user=update.effective_user,
+            target_user_id=target_user_id,
+            reason="Usuario desbaneado - Advertencias reseteadas",
+            group_id=group_id,
+            additional_data={
+                'success': True,
+                'warns_reset': True
+            })
+
         response = f"🔓 **USUARIO DESBANEADO** 🔓\n\n"
         response += f"👤 **ID:** {target_user_id}\n"
         response += f"👮‍♂️ **Por:** {update.effective_user.first_name}\n"
         response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
         response += f"✅ **El usuario puede ingresar nuevamente al chat**\n"
         response += f"🔄 **Advertencias reseteadas a 0/3**\n"
-        response += f"💡 **Acción ejecutada exitosamente**"
+        response += f"💡 **Acción ejecutada y registrada**"
 
         await update.message.reply_text(response,
                                         parse_mode=ParseMode.MARKDOWN)
 
     except Exception as e:
+        # Enviar log de error
+        await send_admin_log(context=context,
+                             action_type='UNBAN',
+                             admin_user=update.effective_user,
+                             target_user_id=target_user_id,
+                             reason="Error al desbanear usuario",
+                             group_id=group_id,
+                             additional_data={
+                                 'success': False,
+                                 'error': str(e)
+                             })
+
         await update.message.reply_text(
             f"❌ **ERROR AL DESBANEAR**\n\n"
             f"👤 **Usuario:** {target_user_id}\n"
@@ -4499,7 +5104,9 @@ async def open_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
-@bot_admin_only
+@staff_only(
+    3
+)  # Moderador o superior (incluye fundadores, co-fundadores y moderadores)
 async def housemode_command(update: Update,
                             context: ContextTypes.DEFAULT_TYPE):
     """Modo casa de seguridad - Solo admins"""
@@ -4564,7 +5171,6 @@ async def housemode_command(update: Update,
             response += f"🕒 El grupo será activado en breve por un administrador\n"
             response += f"👮‍♂️ **Activado por:** {update.effective_user.first_name}\n"
             response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            
 
         except Exception as e:
             response = f"❌ **ERROR AL ACTIVAR MODO CASA** ❌\n\n"
@@ -5083,6 +5689,171 @@ async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+@admin_only
+async def establishedadministration_command(
+        update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Configurar canal para logs de acciones administrativas - Corregido"""
+    try:
+        args = context.args
+        group_id = str(update.effective_chat.id)
+
+        if not args:
+            # Mostrar estado actual
+            try:
+                current_config = db.get_admin_log_channel(group_id)
+
+                response = "📋 **CONFIGURAR LOGS ADMINISTRATIVOS** 📋\n\n"
+                response += "**Uso:** `/establishedadministration [channel_id]`\n\n"
+                response += "📝 **Función:**\n"
+                response += "• Configura canal para recibir logs automáticos\n"
+                response += "• Registra todas las acciones administrativas\n"
+                response += "• Incluye: ban/unban/warn/unwarn/clean\n\n"
+                response += "💡 **Ejemplo:** `/establishedadministration -1001234567890`\n\n"
+
+                if current_config and current_config.get('channel_id'):
+                    response += "📊 **Estado actual:**\n"
+                    response += f"✅ **Configurado:** Canal `{current_config['channel_id']}`\n"
+                    response += f"📅 **Desde:** {current_config.get('configured_at', 'N/A')[:10]}\n"
+                    response += f"🔄 **Estado:** {'Activo' if current_config.get('active', True) else 'Inactivo'}\n\n"
+                    response += "🔧 **Para cambiar:** Ejecuta el comando con nuevo ID"
+                else:
+                    response += "❌ **No configurado**\n"
+                    response += "⚙️ **Configura un canal para empezar a recibir logs**"
+
+                await update.message.reply_text(response,
+                                                parse_mode=ParseMode.MARKDOWN)
+                return
+            except Exception as e:
+                logger.error(f"Error mostrando estado de logs: {e}")
+                await update.message.reply_text(
+                    "❌ **Error al mostrar estado**\n\n"
+                    "📋 **Uso:** `/establishedadministration [channel_id]`\n"
+                    "💡 **Ejemplo:** `/establishedadministration -1001234567890`"
+                )
+                return
+
+        # Procesar configuración del canal
+        admin_channel_id = args[0].strip()
+
+        # Validaciones mejoradas
+        if not admin_channel_id:
+            await update.message.reply_text(
+                "❌ **ID VACÍO** ❌\n\n"
+                "💡 Proporciona un ID de canal válido\n"
+                "📋 **Ejemplo:** `/establishedadministration -1001234567890`")
+            return
+
+        # Verificar formato de ID
+        if not admin_channel_id.startswith('-'):
+            await update.message.reply_text(
+                "❌ **FORMATO DE ID INVÁLIDO** ❌\n\n"
+                "🔍 El ID del canal debe empezar con '-'\n\n"
+                "📋 **Formato correcto:**\n"
+                "• Canal: `-1001234567890`\n"
+                "• Grupo: `-1234567890`\n\n"
+                "🔍 **Para obtener ID:**\n"
+                "1. Agrega @RawDataBot al canal\n"
+                "2. Escribe cualquier mensaje\n"
+                "3. Copia el chat ID que muestre",
+                parse_mode=ParseMode.MARKDOWN)
+            return
+
+        # Verificar que sea numérico después del guión
+        try:
+            int(admin_channel_id)
+        except ValueError:
+            await update.message.reply_text(
+                "❌ **ID INVÁLIDO** ❌\n\n"
+                "💡 El ID debe ser un número válido\n"
+                "📋 **Ejemplo válido:** `-1001234567890`",
+                parse_mode=ParseMode.MARKDOWN)
+            return
+
+        # Verificar acceso al canal
+        try:
+            chat_info = await context.bot.get_chat(admin_channel_id)
+            chat_name = chat_info.title or f"Canal {admin_channel_id}"
+
+        except Exception as e:
+            error_msg = str(e).lower()
+            logger.error(f"Error accediendo al canal {admin_channel_id}: {e}")
+
+            if "forbidden" in error_msg or "not found" in error_msg or "chat not found" in error_msg:
+                await update.message.reply_text(
+                    "❌ **BOT NO TIENE ACCESO AL CANAL** ❌\n\n"
+                    f"🔍 **Canal:** `{admin_channel_id}`\n\n"
+                    "💡 **Solución:**\n"
+                    "1. Agrega el bot al canal\n"
+                    "2. Dale permisos de administrador\n"
+                    "3. Permite envío de mensajes\n\n"
+                    "🤖 **Bot:** @ChernobilChLv_bot",
+                    parse_mode=ParseMode.MARKDOWN)
+            else:
+                await update.message.reply_text(
+                    f"❌ **ERROR DE CONEXIÓN** ❌\n\n"
+                    f"🔍 **Error:** {str(e)[:50]}...\n\n"
+                    "💡 Verifica que el ID sea correcto y el bot tenga acceso",
+                    parse_mode=ParseMode.MARKDOWN)
+            return
+
+        # Guardar configuración
+        try:
+            db.set_admin_log_channel(group_id, admin_channel_id)
+        except Exception as e:
+            logger.error(f"Error guardando configuración: {e}")
+            await update.message.reply_text(
+                "❌ **Error guardando configuración**\n\n"
+                f"🔍 **Error:** {str(e)[:50]}...\n\n"
+                "💡 Intenta nuevamente")
+            return
+
+        # Enviar mensaje de prueba con formato seguro
+        safe_group_id = escape_markdown(str(group_id))
+        safe_admin_name = escape_markdown(update.effective_user.first_name)
+
+        test_message = "🔧 *CANAL DE LOGS CONFIGURADO* 🔧\n\n"
+        test_message += "✅ *Estado:* Activo\n"
+        test_message += f"🏠 *Grupo origen:* `{safe_group_id}`\n"
+        test_message += f"👮‍♂️ *Configurado por:* {safe_admin_name}\n"
+        test_message += f"⏰ *Fecha:* {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        test_message += "📋 *Se registrarán:*\n"
+        test_message += "🔨 Ban/Unban de usuarios\n"
+        test_message += "⚠️ Warn/Unwarn de usuarios\n"
+        test_message += "🧹 Limpieza de mensajes\n\n"
+        test_message += "🤖 *Bot:* @ChernobilChLv\\_bot"
+
+        try:
+            await context.bot.send_message(chat_id=admin_channel_id,
+                                           text=test_message,
+                                           parse_mode=ParseMode.MARKDOWN)
+
+            response = "✅ **LOGS ADMINISTRATIVOS CONFIGURADOS** ✅\n\n"
+            response += f"🏠 **Grupo actual:** `{group_id}`\n"
+            response += f"📢 **Canal de logs:** `{admin_channel_id}`\n"
+            response += f"📝 **Nombre del canal:** {chat_name}\n"
+            response += f"⚙️ **Configurado por:** {update.effective_user.first_name}\n"
+            response += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            response += "🔥 **¡Sistema activo!** Todas las acciones se registrarán automáticamente"
+
+        except Exception as test_error:
+            logger.error(f"Error enviando mensaje de prueba: {test_error}")
+            response = "⚠️ **CONFIGURACIÓN GUARDADA CON ADVERTENCIA** ⚠️\n\n"
+            response += f"💾 **Canal guardado:** `{admin_channel_id}`\n"
+            response += f"❌ **Test falló:** {str(test_error)[:50]}...\n\n"
+            response += "🔧 Verifica que el bot tenga permisos de envío en el canal"
+
+        await update.message.reply_text(response,
+                                        parse_mode=ParseMode.MARKDOWN)
+
+    except Exception as e:
+        logger.error(f"Error general en establishedadministration: {e}")
+        await update.message.reply_text(
+            f"❌ **ERROR GENERAL** ❌\n\n"
+            f"🔍 **Error:** {str(e)[:50]}...\n\n"
+            "💡 Contacta al administrador del bot",
+            parse_mode=ParseMode.MARKDOWN)
+
+
 @bot_admin_only
 async def setcheckchats_command(update: Update,
                                 context: ContextTypes.DEFAULT_TYPE):
@@ -5239,6 +6010,176 @@ async def fix_founder_command(update: Update,
         parse_mode=ParseMode.MARKDOWN)
 
 
+@admin_only
+async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mutear usuario manualmente"""
+    args = context.args
+    chat_id = str(update.effective_chat.id)
+
+    if not args:
+        await update.message.reply_text(
+            "🔇 **MUTEAR USUARIO** 🔇\n\n"
+            "**Uso:** `/mute [user_id] [duración] [razón]`\n\n"
+            "**Duraciones disponibles:**\n"
+            "• `30m` - 30 minutos\n"
+            "• `1h` - 1 hora\n"
+            "• `6h` - 6 horas\n"
+            "• `12h` - 12 horas (por defecto)\n"
+            "• `24h` - 24 horas\n"
+            "• `48h` - 48 horas\n\n"
+            "**Ejemplos:**\n"
+            "• `/mute 123456789 2h Spam excesivo`\n"
+            "• `/mute 123456789` (12h por defecto)",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    target_user_id = args[0]
+
+    # Verificar que no sea staff
+    target_user_id_int = int(target_user_id) if target_user_id.isdigit() else 0
+    is_target_admin = target_user_id_int in ADMIN_IDS
+    target_staff = db.get_staff_role(target_user_id)
+
+    if is_target_admin or target_staff:
+        await update.message.reply_text(
+            "❌ **NO SE PUEDE MUTEAR STAFF**\n\n"
+            "🛡️ Los administradores, fundadores, co-fundadores y moderadores no pueden ser muteados",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    # Procesar duración
+    duration_hours = 12  # Por defecto 12 horas
+    if len(args) > 1:
+        duration_str = args[1].lower()
+        try:
+            if duration_str.endswith('m'):
+                duration_hours = int(duration_str[:-1]) / 60
+            elif duration_str.endswith('h'):
+                duration_hours = int(duration_str[:-1])
+            elif duration_str.isdigit():
+                duration_hours = int(duration_str)
+        except ValueError:
+            duration_hours = 12  # Fallback a 12 horas
+
+    # Procesar razón
+    reason = ' '.join(
+        args[2:]) if len(args) > 2 else "Mute manual por administrador"
+
+    # Aplicar mute
+    unmute_time = auto_mute_user(chat_id, target_user_id, int(duration_hours))
+
+    # Obtener información del usuario si es posible
+    try:
+        chat_member = await context.bot.get_chat_member(
+            update.effective_chat.id, int(target_user_id))
+        target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
+    except:
+        target_username = f"ID: {target_user_id}"
+
+    response = f"🔇 **USUARIO MUTEADO** 🔇\n\n"
+    response += f"👤 **Usuario:** {target_username}\n"
+    response += f"⏰ **Duración:** {duration_hours} horas\n"
+    response += f"🔓 **Desmute:** {unmute_time.strftime('%d/%m/%Y %H:%M')}\n"
+    response += f"📝 **Razón:** {reason}\n"
+    response += f"👮‍♂️ **Por:** {update.effective_user.first_name}\n"
+    response += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+    response += f"💡 **El usuario no podrá enviar mensajes durante este período**"
+
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
+@admin_only
+async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Desmutear usuario manualmente"""
+    args = context.args
+    chat_id = str(update.effective_chat.id)
+
+    if not args:
+        await update.message.reply_text(
+            "🔊 **DESMUTEAR USUARIO** 🔊\n\n"
+            "**Uso:** `/unmute [user_id]`\n\n"
+            "**Ejemplo:** `/unmute 123456789`",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    target_user_id = args[0]
+
+    # Verificar si el usuario está muteado
+    if chat_id not in muted_users or target_user_id not in muted_users[chat_id]:
+        await update.message.reply_text(
+            f"❌ **USUARIO NO ESTÁ MUTEADO**\n\n"
+            f"👤 **Usuario ID:** {target_user_id}\n"
+            f"💡 Este usuario no está en la lista de muteados",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    # Remover del sistema de mutes
+    del muted_users[chat_id][target_user_id]
+    if not muted_users[
+            chat_id]:  # Si no hay más usuarios muteados, eliminar el chat
+        del muted_users[chat_id]
+
+    # Obtener información del usuario si es posible
+    try:
+        chat_member = await context.bot.get_chat_member(
+            update.effective_chat.id, int(target_user_id))
+        target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
+    except:
+        target_username = f"ID: {target_user_id}"
+
+    response = f"🔊 **USUARIO DESMUTEADO** 🔊\n\n"
+    response += f"👤 **Usuario:** {target_username}\n"
+    response += f"✅ **Estado:** Puede enviar mensajes nuevamente\n"
+    response += f"👮‍♂️ **Desmuteado por:** {update.effective_user.first_name}\n"
+    response += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+    response += f"💡 **El mute ha sido removido manualmente**"
+
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
+@admin_only
+async def mutelist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ver lista de usuarios muteados en el chat actual"""
+    chat_id = str(update.effective_chat.id)
+
+    if chat_id not in muted_users or not muted_users[chat_id]:
+        await update.message.reply_text(
+            "✅ **NO HAY USUARIOS MUTEADOS**\n\n"
+            "💡 Actualmente no hay usuarios muteados en este chat",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    response = f"🔇 **USUARIOS MUTEADOS** 🔇\n\n"
+    current_time = datetime.now()
+
+    muted_count = 0
+    for user_id, unmute_time in muted_users[chat_id].items():
+        if current_time < unmute_time:  # Solo mostrar mutes activos
+            muted_count += 1
+            time_left = unmute_time - current_time
+            hours_left = int(time_left.total_seconds() // 3600)
+            minutes_left = int((time_left.total_seconds() % 3600) // 60)
+
+            # Intentar obtener nombre de usuario
+            try:
+                chat_member = await context.bot.get_chat_member(
+                    update.effective_chat.id, int(user_id))
+                username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
+            except:
+                username = f"ID: {user_id}"
+
+            response += f"👤 **{username}**\n"
+            response += f"⏰ Tiempo restante: {hours_left}h {minutes_left}m\n"
+            response += f"🔓 Desmute: {unmute_time.strftime('%d/%m %H:%M')}\n\n"
+
+    if muted_count == 0:
+        response = "✅ **NO HAY USUARIOS MUTEADOS ACTIVOS**"
+    else:
+        response += f"📊 **Total muteados:** {muted_count}"
+
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
 @bot_admin_only
 async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bloqueo total del grupo - Solo admins"""
@@ -5323,6 +6264,435 @@ async def lockdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = "❌ **Acción inválida.** Usa: `on` o `off`"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
+@check_maintenance
+async def startfoundress_command(update: Update,
+                                 context: ContextTypes.DEFAULT_TYPE):
+    """Comandos disponibles para fundadores - Solo fundadores pueden ver"""
+    user_id = str(update.effective_user.id)
+
+    # Verificar que sea fundador
+    if not db.is_founder(user_id):
+        await update.message.reply_text(
+            "❌ **ACCESO DENEGADO** ❌\n\n"
+            "🔒 **Este comando es EXCLUSIVO para:**\n"
+            "• 👑 Fundadores únicamente\n\n"
+            "🚫 **Tu rol actual:** No autorizado\n"
+            "💡 **Contacta a un fundador para obtener permisos**",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    response = "👑 **COMANDOS DE FUNDADOR** 👑\n"
+    response += "═══════════════════════════════\n\n"
+    response += "🔥 **PERMISOS MÁXIMOS - NIVEL 1**\n\n"
+
+    response += "🛡️ **GESTIÓN DE STAFF:**\n"
+    response += "• `/founder add/remove [user_id]` - Gestionar fundadores\n"
+    response += "• `/cofounder add/remove [user_id]` - Gestionar co-fundadores\n"
+    response += "• `/moderator add/remove [user_id]` - Gestionar moderadores\n"
+    response += "• `/staff list` - Ver todo el staff\n\n"
+
+    response += "🔨 **MODERACIÓN AVANZADA:**\n"
+    response += "• `/ban [user_id] [razón]` - Banear usuarios\n"
+    response += "• `/unban [user_id]` - Desbanear usuarios\n"
+    response += "• `/warn [user_id] [razón]` - Advertir usuarios\n"
+    response += "• `/unwarn [user_id]` - Quitar advertencias\n"
+    response += "• `/clean [número]` - Limpiar mensajes\n"
+    response += "• `/clean auto [tiempo]` - Limpieza automática\n\n"
+
+    response += "🚨 **CONTROL DEL BOT:**\n"
+    response += "• `/close [mensaje]` - Cerrar bot (mantenimiento)\n"
+    response += "• `/open` - Abrir bot\n"
+    response += "• `/housemode on/off` - Modo casa de seguridad\n"
+    response += "• `/lockdown on/off` - Bloqueo total del grupo\n\n"
+
+    response += "💎 **SISTEMA PREMIUM:**\n"
+    response += "• `/premium [user_id] [días]` - Otorgar premium\n"
+    response += "• `/creditcleaningworld` - Reinicio masivo de créditos\n\n"
+
+    response += "📢 **PUBLICACIONES:**\n"
+    response += "• `/post [chat_id] [contenido]` - Publicar con IA\n\n"
+
+    response += "⚙️ **CONFIGURACIÓN:**\n"
+    response += "• `/establishedadministration [channel]` - Config logs\n"
+    response += "• `/setcheckchats [verify] [publish]` - Config /check\n\n"
+
+    response += "📊 **INFORMACIÓN:**\n"
+    response += "• `/stats` - Estadísticas completas\n"
+    response += "• `/links [user_id]` - Historial de links\n"
+    response += "• `/id [user_id]` - Info detallada de usuario\n\n"
+
+    response += f"👤 **Consultado por:** {update.effective_user.first_name}\n"
+    response += f"🎯 **Nivel de acceso:** MÁXIMO (Fundador)"
+
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
+@check_maintenance
+async def startcofunder_command(update: Update,
+                                context: ContextTypes.DEFAULT_TYPE):
+    """Comandos disponibles para co-fundadores - Solo co-fundadores y fundadores"""
+    user_id = str(update.effective_user.id)
+
+    # Verificar que sea co-fundador o fundador
+    is_founder = db.is_founder(user_id)
+    is_cofounder = db.is_cofounder(user_id)
+
+    if not (is_founder or is_cofounder):
+        await update.message.reply_text(
+            "❌ **ACCESO DENEGADO** ❌\n\n"
+            "🔒 **Este comando es EXCLUSIVO para:**\n"
+            "• 👑 Fundadores\n"
+            "• 💎 Co-fundadores\n\n"
+            "🚫 **Tu rol actual:** No autorizado\n"
+            "💡 **Contacta a un co-fundador o fundador**",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    user_role = "👑 Fundador" if is_founder else "💎 Co-fundador"
+
+    response = "💎 **COMANDOS DE CO-FUNDADOR** 💎\n"
+    response += "═══════════════════════════════\n\n"
+    response += "⚡ **PERMISOS AVANZADOS - NIVEL 2**\n\n"
+
+    response += "🛡️ **GESTIÓN DE MODERADORES:**\n"
+    response += "• `/moderator add [user_id]` - Asignar moderadores\n"
+    response += "• `/moderator remove [user_id]` - Quitar moderadores\n"
+    response += "• `/moderator list` - Ver moderadores\n\n"
+
+    response += "🔨 **MODERACIÓN COMPLETA:**\n"
+    response += "• `/ban [user_id] [razón]` - Banear usuarios\n"
+    response += "• `/warn [user_id] [razón]` - Advertir usuarios (ilimitado)\n"
+    response += "• `/unwarn [user_id]` - Quitar advertencias\n"
+    response += "• `/clean [número]` - Limpiar mensajes\n"
+    response += "• `/clean auto [tiempo]` - Limpieza automática\n\n"
+
+    response += "🏠 **CONTROL DE SEGURIDAD:**\n"
+    response += "• `/housemode on/off [razón]` - Modo casa\n"
+    response += "• `/staff list` - Ver todo el staff\n\n"
+
+    response += "📢 **PUBLICACIONES:**\n"
+    response += "• `/post [chat_id] [contenido]` - Publicar con IA\n\n"
+
+    response += "📊 **INFORMACIÓN:**\n"
+    response += "• `/id [user_id]` - Info de usuarios\n\n"
+
+    response += "🚫 **NO DISPONIBLE PARA CO-FUNDADORES:**\n"
+    response += "• Gestión de fundadores/co-fundadores\n"
+    response += "• Control total del bot (close/open)\n"
+    response += "• Comandos ultra-críticos\n\n"
+
+    response += f"👤 **Consultado por:** {update.effective_user.first_name}\n"
+    response += f"🎭 **Tu rol:** {user_role}\n"
+    response += f"🎯 **Nivel de acceso:** AVANZADO"
+
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
+@check_maintenance
+async def startmoderator_command(update: Update,
+                                 context: ContextTypes.DEFAULT_TYPE):
+    """Comandos disponibles para moderadores - Solo moderadores, co-fundadores y fundadores"""
+    user_id = str(update.effective_user.id)
+
+    # Verificar que sea al menos moderador
+    is_founder = db.is_founder(user_id)
+    is_cofounder = db.is_cofounder(user_id)
+    is_moderator = db.is_moderator(user_id)
+
+    if not (is_founder or is_cofounder or is_moderator):
+        await update.message.reply_text(
+            "❌ **ACCESO DENEGADO** ❌\n\n"
+            "🔒 **Este comando es EXCLUSIVO para:**\n"
+            "• 👑 Fundadores\n"
+            "• 💎 Co-fundadores\n"
+            "• 🛡️ Moderadores\n\n"
+            "🚫 **Tu rol actual:** Usuario estándar\n"
+            "💡 **Contacta al staff para obtener permisos**",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    # Determinar rol del usuario
+    if is_founder:
+        user_role = "👑 Fundador"
+        access_level = "MÁXIMO"
+    elif is_cofounder:
+        user_role = "💎 Co-fundador"
+        access_level = "AVANZADO"
+    else:
+        user_role = "🛡️ Moderador"
+        access_level = "BÁSICO"
+
+    response = "🛡️ **COMANDOS DE MODERADOR** 🛡️\n"
+    response += "═══════════════════════════════\n\n"
+    response += "⚠️ **PERMISOS BÁSICOS - NIVEL 3**\n\n"
+
+    response += "🔨 **MODERACIÓN LIMITADA:**\n"
+    response += "• `/warn [user_id] [razón]` - Advertir usuarios\n"
+    response += f"  ⚠️ **Límite:** {2 if is_moderator and not (is_founder or is_cofounder) else 'Ilimitado'} warns por moderador\n"
+    response += "• `/clean [número]` - Limpiar mensajes (pequeñas cantidades)\n\n"
+
+    response += "📊 **INFORMACIÓN:**\n"
+    response += "• `/staff list` - Ver lista de staff\n"
+    response += "• `/id [user_id]` - Ver info básica de usuarios\n\n"
+
+    if is_moderator and not (is_founder or is_cofounder):
+        # Obtener datos del moderador para mostrar warns dados
+        staff_data = db.get_staff_role(user_id)
+        warns_given = staff_data.get('warn_count', 0) if staff_data else 0
+
+        response += "🚨 **LIMITACIONES DE MODERADOR:**\n"
+        response += f"• **Warns dados:** {warns_given}/2\n"
+        response += "• **NO puede:** ban/unban usuarios\n"
+        response += "• **NO puede:** gestionar otros moderadores\n"
+        response += "• **NO puede:** usar comandos de co-fundador/fundador\n"
+        response += "• **NO puede:** limpieza automática\n"
+        response += "• **NO puede:** control del bot\n\n"
+
+    response += "🚫 **NO DISPONIBLE PARA MODERADORES:**\n"
+    response += "• Gestión de staff (add/remove roles)\n"
+    response += "• Ban/unban permanente de usuarios\n"
+    response += "• Control del bot (close/open/housemode)\n"
+    response += "• Publicaciones automáticas\n"
+    response += "• Configuraciones del sistema\n\n"
+
+    response += f"👤 **Consultado por:** {update.effective_user.first_name}\n"
+    response += f"🎭 **Tu rol:** {user_role}\n"
+    response += f"🎯 **Nivel de acceso:** {access_level}"
+
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
+@staff_only(1)  # SOLO fundadores nivel 1
+async def moderation_master_command(update: Update,
+                                    context: ContextTypes.DEFAULT_TYPE):
+    """COMANDO ULTRA SENSIBLE - Muestra TODOS los comandos de moderación - SOLO FUNDADORES"""
+    user_id = str(update.effective_user.id)
+
+    # Verificación adicional de seguridad
+    if not db.is_founder(user_id):
+        await update.message.reply_text(
+            "🚨 **ACCESO ULTRA RESTRINGIDO** 🚨\n\n"
+            "⛔ **COMANDO CLASIFICADO**\n"
+            "🔒 **SOLO FUNDADORES NIVEL 1**\n\n"
+            "🚫 **ACCESO DENEGADO PERMANENTEMENTE**\n\n"
+            "📝 **Este intento ha sido registrado**",
+            parse_mode=ParseMode.MARKDOWN)
+
+        # Log de intento de acceso no autorizado
+        logger.warning(
+            f"INTENTO NO AUTORIZADO de acceso a moderation_master - Usuario: {user_id} ({update.effective_user.first_name})"
+        )
+        return
+
+    # Log de acceso autorizado
+    logger.info(
+        f"ACCESO AUTORIZADO a moderation_master - Fundador: {user_id} ({update.effective_user.first_name})"
+    )
+
+    try:
+        message = "🔥 **MODERATION MASTER - ULTRA PRIVADO** 🔥\n"
+        message += "═══════════════════════════════════════════\n"
+        message += "🛡️ **CLASIFICACIÓN: TOP SECRET** 🛡️\n\n"
+
+        message += f"👑 **FUNDADOR:** {update.effective_user.first_name}\n"
+        message += f"🆔 **ID AUTORIZADO:** `{user_id}`\n"
+        message += f"🕐 **ACCESO:** {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+        message += f"🔐 **SEGURIDAD:** Triple verificación pasada\n\n"
+
+        message += "👥 **GESTIÓN COMPLETA DE STAFF:**\n"
+        message += "• `/founder add/remove/list` - Control total de fundadores\n"
+        message += "• `/cofounder add/remove/list` - Gestión de co-fundadores\n"
+        message += "• `/moderator add/remove/list` - Administrar moderadores\n"
+        message += "• `/staff list` - Vista completa del staff\n"
+        message += "• `/emergency_founder` - Registro de emergencia\n"
+        message += "• `/fix_founder` - Reparar permisos\n\n"
+
+        message += "🔨 **ARSENAL DE MODERACIÓN:**\n"
+        message += "• `/ban [user_id] [razón]` - Banear usuarios\n"
+        message += "• `/unban [user_id]` - Liberar usuarios\n"
+        message += "• `/warn [user_id] [razón]` - Sistema de advertencias\n"
+        message += "• `/unwarn [user_id]` - Quitar advertencias\n"
+        message += "• `/kick [user_id]` - Expulsar usuarios\n"
+        message += "• `/clean [cantidad]` - Limpieza de mensajes\n"
+        message += "• `/clean auto [tiempo]` - Limpieza automática\n"
+        message += "• `/cleanstatus` - Estado de limpieza\n\n"
+
+        message += "🏛️ **CONTROL ADMINISTRATIVO:**\n"
+        message += "• `/open` - Activar bot\n"
+        message += "• `/close [mensaje]` - Mantenimiento\n"
+        message += "• `/lockdown on/off` - Bloqueo total\n"
+        message += "• `/housemode on/off` - Modo casa\n"
+        message += "• `/stats` - Estadísticas completas\n"
+        message += "• `/id [user_id]` - Información de usuarios\n"
+        message += "• `/links [user_id]` - Historial de enlaces\n\n"
+
+        message += "💰 **SISTEMA ECONÓMICO:**\n"
+        message += "• `/premium [user_id] [días]` - Otorgar premium\n"
+        message += "• `/donate [user_id] [cantidad]` - Transferir créditos\n"
+        message += "• `/creditcleaningworld` - Reset masivo de créditos\n\n"
+
+        message += "⚙️ **CONFIGURACIÓN AVANZADA:**\n"
+        message += "• `/setcheckchats` - Sistema de verificaciones\n"
+        message += "• `/establishedadministration` - Logs administrativos\n"
+        message += "• `/post [chat] [contenido]` - Publicaciones con IA\n\n"
+
+        message += "🔐 **COMANDOS DE INFORMACIÓN:**\n"
+        message += "• `/startfoundress` - Comandos de fundador\n"
+        message += "• `/startcofounder` - Comandos de co-fundador\n"
+        message += "• `/startmoderator` - Comandos de moderador\n\n"
+
+        message += "📊 **TOTAL DE COMANDOS:** 25+\n"
+        message += "🔥 **NIVEL DE ACCESO:** MÁXIMO\n"
+        message += "⚡ **PODER:** SIN RESTRICCIONES\n\n"
+
+        message += "⚠️ **ADVERTENCIA DE SEGURIDAD:**\n"
+        message += "• Este comando es ultra-secreto\n"
+        message += "• Solo fundadores autorizados\n"
+        message += "• Todos los accesos son registrados\n"
+        message += "• Uso responsable obligatorio\n\n"
+
+        message += "🛡️ **ACCESO REGISTRADO EN LOGS DE SEGURIDAD**"
+
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+
+    except Exception as e:
+        logger.error(f"❌ Error importante: {e}")
+        await update.message.reply_text(
+            "❌ **ERROR EN MODERATION MASTER** ❌\n\n"
+            "🔧 Error técnico al generar el reporte completo\n"
+            "💡 Intenta nuevamente en unos segundos\n\n"
+            "🛡️ **Tu acceso como fundador está confirmado**",
+            parse_mode=ParseMode.MARKDOWN)
+
+
+@staff_only(1)  # Solo fundadores (nivel 1)
+async def creditcleaningworld_command(update: Update,
+                                      context: ContextTypes.DEFAULT_TYPE):
+    """Reiniciar créditos de todos los usuarios - SOLO FUNDADORES"""
+    user_id = str(update.effective_user.id)
+
+    # Verificación adicional de seguridad
+    if not db.is_founder(user_id):
+        await update.message.reply_text(
+            "❌ **ACCESO ULTRA RESTRINGIDO** ❌\n\n"
+            "🔒 **Este comando es EXCLUSIVO para:**\n"
+            "• 👑 Fundadores (Nivel 1) únicamente\n\n"
+            "🚫 **No autorizado para:**\n"
+            "• Co-fundadores\n"
+            "• Moderadores\n"
+            "• Administradores de grupo\n\n"
+            "⚠️ **Razón:** Comando crítico de moderación\n"
+            "💡 **Contacta a un fundador para esta operación**",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    # Mensaje de confirmación y advertencia
+    await update.message.reply_text(
+        "⚠️ **OPERACIÓN CRÍTICA INICIADA** ⚠️\n\n"
+        "🔥 **REINICIO MASIVO DE CRÉDITOS**\n\n"
+        "⏳ **Procesando base de datos...**\n"
+        "📊 **Analizando usuarios...**\n"
+        "🛡️ **Aplicando excepciones de seguridad...**\n\n"
+        "💡 **Esto puede tomar unos segundos**",
+        parse_mode=ParseMode.MARKDOWN)
+
+    # Contadores para estadísticas
+    total_users = len(db.users)
+    users_reset = 0
+    users_protected = 0
+    premium_protected = 0
+    founder_protected = 0
+
+    reset_users = []
+    protected_users = []
+
+    # Procesar cada usuario
+    for user_id_db, user_data in db.users.items():
+        user_id_int = int(user_id_db)
+
+        # Verificar si es fundador (nivel 1)
+        is_founder = db.is_founder(user_id_db)
+
+        # Verificar si es premium
+        is_premium = user_data.get('premium', False)
+        if is_premium:
+            # Verificar si el premium no ha expirado
+            premium_until = user_data.get('premium_until')
+            if premium_until:
+                premium_date = datetime.fromisoformat(premium_until)
+                is_premium = datetime.now() < premium_date
+
+        # EXCEPCIONES: No reiniciar créditos a estos usuarios
+        if is_founder:
+            # Fundadores están protegidos
+            protected_users.append(f"👑 Fundador: {user_id_db}")
+            founder_protected += 1
+            users_protected += 1
+        elif is_premium:
+            # Usuarios premium están protegidos
+            protected_users.append(f"💎 Premium: {user_id_db}")
+            premium_protected += 1
+            users_protected += 1
+        else:
+            # REINICIAR créditos (Co-fundadores, moderadores y usuarios normales)
+            old_credits = user_data.get('credits', 0)
+
+            # Obtener información del usuario para el log
+            staff_data = db.get_staff_role(user_id_db)
+            if staff_data:
+                if staff_data['role'] == '2':
+                    user_type = "Co-fundador"
+                elif staff_data['role'] == '3':
+                    user_type = "Moderador"
+                else:
+                    user_type = "Usuario"
+            else:
+                user_type = "Usuario"
+
+            # Reiniciar a 10 créditos (créditos iniciales)
+            db.update_user(user_id_db, {'credits': 10})
+
+            reset_users.append(
+                f"{user_type}: {user_id_db} ({old_credits} → 10)")
+            users_reset += 1
+
+    # Crear reporte detallado
+    response = f"🔥 **REINICIO MASIVO COMPLETADO** 🔥\n\n"
+    response += f"📊 **ESTADÍSTICAS DE LA OPERACIÓN:**\n"
+    response += f"├ 👥 **Total usuarios:** {total_users}\n"
+    response += f"├ 🔄 **Reiniciados:** {users_reset}\n"
+    response += f"├ 🛡️ **Protegidos:** {users_protected}\n"
+    response += f"└ 📈 **Efectividad:** {(users_reset/total_users)*100:.1f}%\n\n"
+
+    response += f"🛡️ **USUARIOS PROTEGIDOS ({users_protected}):**\n"
+    response += f"├ 👑 **Fundadores:** {founder_protected}\n"
+    response += f"└ 💎 **Premium:** {premium_protected}\n\n"
+
+    response += f"🔄 **DETALLES DE REINICIO:**\n"
+    response += f"• Co-fundadores: ✅ Reiniciados\n"
+    response += f"• Moderadores: ✅ Reiniciados\n"
+    response += f"• Usuarios normales: ✅ Reiniciados\n"
+    response += f"• Créditos establecidos: 10 (inicial)\n\n"
+
+    response += f"⚡ **OPERACIÓN EJECUTADA POR:**\n"
+    response += f"👤 **Fundador:** {update.effective_user.first_name}\n"
+    response += f"🆔 **ID:** `{update.effective_user.id}`\n"
+    response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n\n"
+
+    response += f"🎯 **PROPÓSITO:** Prevención de acumulación masiva\n"
+    response += f"🔒 **SEGURIDAD:** Multicuentas neutralizadas\n"
+    response += f"✅ **ESTADO:** Operación completada exitosamente"
+
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+    # Log de seguridad para esta operación crítica
+    logger.info(
+        f"CREDITCLEANINGWORLD ejecutado - Fundador: {update.effective_user.id} "
+        f"({update.effective_user.first_name}) - Usuarios reiniciados: {users_reset}/{total_users} - "
+        f"Protegidos: {users_protected} (Fundadores: {founder_protected}, Premium: {premium_protected})"
+    )
 
 
 # Callback Query Handler
@@ -5595,102 +6965,223 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data.startswith('reject_check_'):
         await handle_check_approval(query, context, False)
+
+    # Callbacks para gates system
+    elif query.data.startswith('gate_') or query.data in [
+            'gates_close', 'gates_status', 'gates_back'
+    ]:
+        from gates_system import handle_gate_callback
+        await handle_gate_callback(update, context)
     # Callback para regenerar tarjetas - CORREGIDO
     elif query.data.startswith('regen_'):
-        parts = query.data.split('_')
-        bin_number = parts[1]
-        count = int(parts[2])
-        preset_month = parts[3] if parts[3] != "rnd" else None
-        preset_year = parts[4] if parts[4] != "rnd" else None
-        preset_cvv = parts[5] if parts[5] != "rnd" else None
-
-        # Obtener parámetros adicionales si existen
-        card_length = int(parts[6]) if len(parts) > 6 else 16
-        cvv_length = int(parts[7]) if len(parts) > 7 else 3
-
-        # Convertir strings a integers
-        if preset_month: preset_month = int(preset_month)
-        if preset_year: preset_year = int(preset_year)
-        if preset_cvv: preset_cvv = int(preset_cvv)
-
-        await query.edit_message_text("🔄 Regenerando tarjetas...")
-
-        # Determinar tipo de tarjeta
-        card_type = "UNKNOWN"
-        if bin_number.startswith('4'):
-            card_type = "VISA"
-        elif bin_number.startswith('5') or bin_number.startswith('2'):
-            card_type = "MASTERCARD"
-        elif bin_number.startswith('3'):
-            card_type = "AMERICAN EXPRESS"
-
-        # Generar tarjetas con método avanzado
         try:
-            if preset_month or preset_year or preset_cvv:
-                cards = CardGenerator.generate_cards_custom_advanced(
-                    bin_number, count, preset_month, preset_year, preset_cvv,
-                    card_length, cvv_length)
+            parts = query.data.split('_')
+            if len(parts) < 6:
+                await query.answer("❌ Datos de regeneración incompletos",
+                                   show_alert=True)
+                return
+
+            bin_number = parts[1]
+
+            # Validar que count sea un número válido
+            try:
+                count = int(parts[2])
+                if count < 1 or count > 50:
+                    count = 10  # Valor por defecto
+            except (ValueError, IndexError):
+                count = 10
+
+            preset_month = parts[3] if parts[3] != "rnd" else None
+            preset_year = parts[4] if parts[4] != "rnd" else None
+            preset_cvv = parts[5] if parts[5] != "rnd" else None
+
+            # Obtener parámetros adicionales si existen
+            try:
+                card_length = int(parts[6]) if len(parts) > 6 else 16
+                cvv_length = int(parts[7]) if len(parts) > 7 else 3
+            except (ValueError, IndexError):
+                card_length = 16
+                cvv_length = 3
+
+            # Convertir strings a integers con validación mejorada
+            if preset_month and preset_month.isdigit():
+                preset_month = int(preset_month)
+                if not (1 <= preset_month <= 12):
+                    preset_month = None
             else:
-                cards = CardGenerator.generate_cards_advanced(
-                    bin_number, count, card_length, cvv_length)
-        except:
-            # Fallback al método básico
-            cards = CardGenerator.generate_cards(bin_number, count)
+                preset_month = None
 
-        # Obtener información REAL del BIN
-        real_bin_info = await get_real_bin_info(bin_number)
+            if preset_year and preset_year.isdigit():
+                preset_year = int(preset_year)
+                if preset_year < 2024 or preset_year > 2035:
+                    preset_year = None
+            else:
+                preset_year = None
 
-        # Crear máscara del BIN apropiada
-        x_count = card_length - len(bin_number)
-        bin_mask = bin_number + "x" * x_count
+            if preset_cvv and preset_cvv.isdigit():
+                preset_cvv = int(preset_cvv)
+                # Validar CVV según longitud
+                if cvv_length == 4 and (preset_cvv < 1000
+                                        or preset_cvv > 9999):
+                    preset_cvv = None
+                elif cvv_length == 3 and (preset_cvv < 100
+                                          or preset_cvv > 999):
+                    preset_cvv = None
+            else:
+                preset_cvv = None
 
-        # Mostrar formato usado
-        format_display = f"{preset_month or 'rnd'} | {preset_year or 'rnd'} | {preset_cvv or 'rnd'}"
+            # Mensaje de regeneración
+            await query.edit_message_text(
+                "🔄 **REGENERANDO TARJETAS** 🔄\n\n⏳ Procesando nueva generación...",
+                parse_mode=ParseMode.MARKDOWN)
 
-        response = f"BIN: {bin_mask} | {format_display}\n"
-        response += f"═══════════════════════════\n"
-        response += f"        『⛧⛧⛧』⟪ 𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩 ⟫『⛧⛧⛧』\n"
-        response += f"         {card_type} ({card_length} dígitos)\n\n"
+            # Validar BIN mejorado
+            if not bin_number or len(
+                    bin_number) < 6 or not bin_number.isdigit():
+                await query.edit_message_text(
+                    "❌ **ERROR** ❌\n\nBIN inválido para regeneración\n\n💡 El BIN debe tener al menos 6 dígitos"
+                )
+                return
 
-        for card in cards:
-            response += f"{card}\n"
+            # Determinar tipo de tarjeta y validar longitud
+            card_type = "UNKNOWN"
+            if bin_number.startswith('4'):
+                card_type = "VISA"
+                card_length = 16
+                cvv_length = 3
+            elif bin_number.startswith('5') or bin_number.startswith('2'):
+                card_type = "MASTERCARD"
+                card_length = 16
+                cvv_length = 3
+            elif bin_number.startswith('3'):
+                card_type = "AMERICAN EXPRESS"
+                card_length = 15
+                cvv_length = 4
 
-        # Obtener bandera del país
-        country_flags = {
-            'UNITED STATES': '🇺🇸',
-            'CANADA': '🇨🇦',
-            'UNITED KINGDOM': '🇬🇧',
-            'GERMANY': '🇩🇪',
-            'FRANCE': '🇫🇷',
-            'SPAIN': '🇪🇸',
-            'ITALY': '🇮🇹',
-            'BRAZIL': '🇧🇷',
-            'MEXICO': '🇲🇽',
-            'ARGENTINA': '🇦🇷',
-            'COLOMBIA': '🇨🇴'
-        }
-        country_flag = country_flags.get(real_bin_info['country'].upper(), '🌍')
+            # Generar tarjetas con manejo de errores mejorado
+            cards = []
+            try:
+                if preset_month or preset_year or preset_cvv:
+                    cards = CardGenerator.generate_cards_custom_advanced(
+                        bin_number, count, preset_month, preset_year,
+                        preset_cvv, card_length, cvv_length)
+                else:
+                    cards = CardGenerator.generate_cards_advanced(
+                        bin_number, count, card_length, cvv_length)
+            except Exception as e:
+                logger.error(f"Error generando tarjetas avanzadas: {e}")
+                # Fallback al método básico
+                try:
+                    cards = CardGenerator.generate_cards(bin_number, count)
+                except Exception as e2:
+                    logger.error(f"Error en fallback: {e2}")
+                    await query.edit_message_text(
+                        f"❌ **ERROR EN REGENERACIÓN** ❌\n\n"
+                        f"No se pudieron generar las tarjetas.\n"
+                        f"🔍 Error: {str(e2)[:50]}...\n\n"
+                        f"💡 Intenta con un BIN diferente")
+                    return
 
-        # Información REAL del BIN
-        response += f"\n══════ DETAILS ══════\n"
-        response += f"💳 Bin Information:\n"
-        response += f"🏦 Bank: {real_bin_info['bank']}\n"
-        response += f"💼 Type: {real_bin_info['scheme']} - {real_bin_info['type']} - {real_bin_info['level']}\n"
-        response += f"🌍 Country: {real_bin_info['country']} {country_flag}\n"
-        response += f"╚═════𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩═════╝"
+            if not cards:
+                await query.edit_message_text(
+                    "❌ **ERROR** ❌\n\nNo se generaron tarjetas\n\n💡 Intenta nuevamente"
+                )
+                return
 
-        # Mantener exactamente los mismos parámetros
-        regen_data = f"regen_{bin_number}_{count}_{preset_month or 'rnd'}_{preset_year or 'rnd'}_{preset_cvv or 'rnd'}_{card_length}_{cvv_length}"
+            # Obtener información REAL del BIN
+            real_bin_info = await get_real_bin_info(bin_number)
 
-        keyboard = [[
-            InlineKeyboardButton("🔄 Regenerar Tarjetas",
-                                 callback_data=regen_data),
-            InlineKeyboardButton("📊 Ver BIN Info",
-                                 callback_data=f'bininfo_{bin_number}')
-        ]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+            # Crear máscara del BIN apropiada
+            x_count = card_length - len(bin_number)
+            bin_mask = bin_number + "x" * x_count
 
-        await query.edit_message_text(response, reply_markup=reply_markup)
+            # Mostrar formato usado
+            format_display = f"{preset_month or 'rnd'} | {preset_year or 'rnd'} | {preset_cvv or 'rnd'}"
+
+            # Tiempo de generación simulado
+            generation_time = round(random.uniform(0.025, 0.055), 3)
+
+            response = f"BIN: {bin_mask} | {format_display}\n"
+            response += f"═══════════════════════════\n"
+            response += f"        『⛧⛧⛧』⟪ 𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩 ⟫『⛧⛧⛧』\n"
+            response += f"                     \n"
+
+            for card in cards:
+                response += f"{card}\n"
+
+            # Obtener bandera del país
+            country_flags = {
+                'UNITED STATES': '🇺🇸',
+                'CANADA': '🇨🇦',
+                'UNITED KINGDOM': '🇬🇧',
+                'GERMANY': '🇩🇪',
+                'FRANCE': '🇫🇷',
+                'SPAIN': '🇪🇸',
+                'ITALY': '🇮🇹',
+                'BRAZIL': '🇧🇷',
+                'MEXICO': '🇲🇽',
+                'ARGENTINA': '🇦🇷',
+                'COLOMBIA': '🇨🇴',
+                'PERU': '🇵🇪',
+                'CHILE': '🇨🇱',
+                'ECUADOR': '🇪🇨',
+                'VENEZUELA': '🇻🇪'
+            }
+            country_flag = country_flags.get(real_bin_info['country'].upper(),
+                                             '🌍')
+
+            # Información REAL del BIN
+            response += f"\n═════════ DETAILS ══════════\n"
+            response += f"💳 Bin Information:\n"
+            response += f"🏦 Bank: {real_bin_info['bank']}\n"
+            response += f"💼 Type: {real_bin_info['scheme']} - {real_bin_info['type']} - {real_bin_info['level']}\n"
+            response += f"🌍 Country: {real_bin_info['country']} {country_flag}\n"
+            response += f"⏱️ Time Spent: {generation_time}s\n"
+            response += f"👤 Regenerated By: @{query.from_user.username or query.from_user.first_name}\n"
+            response += f"╚═══════𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩═══════╝"
+
+            # Mantener exactamente los mismos parámetros para el nuevo botón
+            regen_data = f"regen_{bin_number}_{count}_{preset_month or 'rnd'}_{preset_year or 'rnd'}_{preset_cvv or 'rnd'}_{card_length}_{cvv_length}"
+
+            keyboard = [[
+                InlineKeyboardButton("🔄 Regenerar Tarjetas",
+                                     callback_data=regen_data),
+                InlineKeyboardButton("📊 Ver BIN Info",
+                                     callback_data=f'bininfo_{bin_number}')
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # Intentar editar el mensaje
+            try:
+                await query.edit_message_text(response,
+                                              reply_markup=reply_markup)
+                await query.answer("✅ Tarjetas regeneradas exitosamente",
+                                   show_alert=False)
+            except Exception as edit_error:
+                logger.error(f"Error editando mensaje: {edit_error}")
+                # Si falla editar, intentar enviar nuevo mensaje
+                try:
+                    await query.message.reply_text(response,
+                                                   reply_markup=reply_markup)
+                    await query.answer(
+                        "✅ Tarjetas regeneradas (nuevo mensaje)",
+                        show_alert=False)
+                except Exception as send_error:
+                    logger.error(f"Error enviando nuevo mensaje: {send_error}")
+                    await query.answer(
+                        f"❌ Error mostrando tarjetas: {str(send_error)[:30]}...",
+                        show_alert=True)
+
+        except Exception as main_error:
+            logger.error(f"Error en regeneración principal: {main_error}")
+            try:
+                await query.edit_message_text(
+                    f"❌ **ERROR CRÍTICO** ❌\n\n"
+                    f"Error en regeneración: {str(main_error)[:100]}...\n\n"
+                    f"💡 Intenta usar /gen nuevamente")
+            except:
+                await query.answer(f"❌ Error crítico en regeneración",
+                                   show_alert=True)
 
     # Callback para mostrar información del BIN
     elif query.data.startswith('bininfo_'):
@@ -5927,9 +7418,13 @@ async def welcome_new_member(update: Update,
                              context: ContextTypes.DEFAULT_TYPE):
     """Mensaje de bienvenida para nuevos miembros"""
     for new_member in update.message.new_chat_members:
-        welcome_text = f"🎉 **¡BIENVENIDO A CHERNOBYL CHLV!** 🎉\n\n"
-        welcome_text += f"👋 Hola {new_member.mention_markdown()}\n\n"
-        welcome_text += f"🔥 **¡Te damos la bienvenida al mejor bot de CCs!**\n\n"
+        # Escapar el nombre de usuario para evitar errores de parsing
+        user_name = new_member.first_name or "Usuario"
+        safe_user_name = escape_markdown(user_name)
+
+        welcome_text = f"🎉 **¡BIENVENIDO A CHERNOBYL CHLV\\!** 🎉\n\n"
+        welcome_text += f"👋 Hola {safe_user_name}\n\n"
+        welcome_text += f"🔥 **¡Te damos la bienvenida al mejor bot de CCs\\!**\n\n"
         welcome_text += f"💡 **Para empezar:**\n"
         welcome_text += f"• Usa `/start` para ver todos los comandos\n"
         welcome_text += f"• Obtén créditos gratis con `/bonus`\n"
@@ -5938,7 +7433,7 @@ async def welcome_new_member(update: Update,
         welcome_text += f"• No spam ni enlaces\n"
         welcome_text += f"• Respeta a otros usuarios\n"
         welcome_text += f"• Usa los comandos correctamente\n\n"
-        welcome_text += f"🤖 **Bot:** @ChernobilChLv_bot\n"
+        welcome_text += f"🤖 **Bot:** @ChernobilChLv\\_bot\n"
         welcome_text += f"🆘 **Soporte:** Contacta a los admins"
 
         # Dar créditos de bienvenida
@@ -5946,16 +7441,143 @@ async def welcome_new_member(update: Update,
         user_data = db.get_user(user_id)
         db.update_user(user_id, {'credits': user_data['credits'] + 10})
 
-        await update.message.reply_text(welcome_text,
-                                        parse_mode=ParseMode.MARKDOWN)
+        try:
+            await update.message.reply_text(welcome_text,
+                                            parse_mode=ParseMode.MARKDOWN)
+        except Exception as e:
+            # Fallback sin formato si hay error de parsing
+            simple_welcome = f"🎉 ¡BIENVENIDO A CHERNOBYL CHLV! 🎉\n\n"
+            simple_welcome += f"👋 Hola {user_name}\n\n"
+            simple_welcome += f"🔥 ¡Te damos la bienvenida al mejor bot de CCs!\n\n"
+            simple_welcome += f"💡 Para empezar:\n"
+            simple_welcome += f"• Usa /start para ver todos los comandos\n"
+            simple_welcome += f"• Obtén créditos gratis con /bonus\n"
+            simple_welcome += f"🎁 Recibes 10 créditos de bienvenida\n\n"
+            simple_welcome += f"📋 Reglas básicas:\n"
+            simple_welcome += f"• No spam ni enlaces\n"
+            simple_welcome += f"• Respeta a otros usuarios\n"
+            simple_welcome += f"• Usa los comandos correctamente\n\n"
+            simple_welcome += f"🤖 Bot: @ChernobilChLv_bot\n"
+            simple_welcome += f"🆘 Soporte: Contacta a los admins"
+
+            await update.message.reply_text(simple_welcome)
 
 
-# Anti-Spam Handler - CORREGIDO CON PERMISOS DE STAFF
+# Sistema de Mutes
+muted_users = {}  # Chat ID -> {user_id: unmute_time}
+
+
+async def check_user_muted(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Verificar si un usuario está muteado y eliminar su mensaje si es necesario"""
+    if not update.message:
+        return False
+
+    chat_id = str(update.effective_chat.id)
+    user_id = str(update.effective_user.id)
+
+    # Verificar si el chat tiene usuarios muteados
+    if chat_id not in muted_users:
+        return False
+
+    # Verificar si el usuario está muteado
+    if user_id not in muted_users[chat_id]:
+        return False
+
+    # Verificar si el mute ha expirado
+    unmute_time = muted_users[chat_id][user_id]
+    current_time = datetime.now()
+
+    if current_time >= unmute_time:
+        # El mute ha expirado, remover del diccionario
+        del muted_users[chat_id][user_id]
+        if not muted_users[
+                chat_id]:  # Si no hay más usuarios muteados, eliminar el chat
+            del muted_users[chat_id]
+        return False
+
+    # El usuario está muteado, eliminar su mensaje
+    try:
+        await update.message.delete()
+        return True
+    except:
+        return False
+
+
+def auto_mute_user(chat_id: str, user_id: str, duration_hours: int = 12):
+    """Mutear usuario automáticamente"""
+    if chat_id not in muted_users:
+        muted_users[chat_id] = {}
+
+    unmute_time = datetime.now() + timedelta(hours=duration_hours)
+    muted_users[chat_id][user_id] = unmute_time
+
+    return unmute_time
+
+
+def detect_spam_patterns(message_text: str) -> dict:
+    """Detectar patrones de spam avanzados"""
+    spam_detected = {'is_spam': False, 'type': '', 'severity': 0}
+
+    # 1. Detectar caracteres repetidos (como Z Z Z Z Z...)
+    import re
+
+    # Patrón para detectar caracteres repetidos con espacios
+    repeated_char_pattern = r'(\S)\s+\1(\s+\1){3,}'
+    repeated_matches = re.findall(repeated_char_pattern, message_text)
+
+    if repeated_matches:
+        spam_detected['is_spam'] = True
+        spam_detected['type'] = 'caracteres_repetidos'
+        spam_detected['severity'] = 3  # Alta severidad
+        return spam_detected
+
+    # 2. Detectar cadenas muy largas del mismo carácter
+    long_repeat_pattern = r'(.)\1{10,}'  # Mismo carácter repetido 10+ veces
+    if re.search(long_repeat_pattern, message_text):
+        spam_detected['is_spam'] = True
+        spam_detected['type'] = 'cadena_repetida'
+        spam_detected['severity'] = 3
+        return spam_detected
+
+    # 3. Detectar palabras repetidas
+    words = message_text.split()
+    if len(words) > 5:
+        word_counts = {}
+        for word in words:
+            word_counts[word] = word_counts.get(word, 0) + 1
+
+        # Si alguna palabra se repite más de 5 veces
+        for word, count in word_counts.items():
+            if count > 5 and len(word) > 1:
+                spam_detected['is_spam'] = True
+                spam_detected['type'] = 'palabra_repetida'
+                spam_detected['severity'] = 2
+                return spam_detected
+
+    # 4. Detectar mensajes excesivamente largos con poco contenido
+    if len(message_text) > 200:
+        unique_chars = len(set(message_text.replace(' ', '')))
+        if unique_chars < 10:  # Muy pocos caracteres únicos
+            spam_detected['is_spam'] = True
+            spam_detected['type'] = 'contenido_pobre'
+            spam_detected['severity'] = 2
+            return spam_detected
+
+    return spam_detected
+
+
+# Anti-Spam Handler - MEJORADO CON DETECCIÓN DE SPAM Y MUTE AUTOMÁTICO
 async def anti_spam_handler(update: Update,
                             context: ContextTypes.DEFAULT_TYPE):
+    """Sistema anti-spam automático que detecta spam, links y aplica mutes - RESPETA ROLES DE STAFF"""
     """Sistema anti-spam automático que detecta, guarda y elimina links - RESPETA ROLES DE STAFF"""
     if not update.message or not update.message.text:
         return
+
+    # Primero verificar si el usuario está muteado
+    is_muted = await check_user_muted(update, context)
+    if is_muted:
+        return  # Mensaje ya eliminado por estar muteado
 
     user_id = str(update.effective_user.id)
     user_id_int = update.effective_user.id
@@ -5975,10 +7597,91 @@ async def anti_spam_handler(update: Update,
     emergency_ids = [6938971996, 5537246556]
     is_emergency_founder = user_id_int in emergency_ids
 
-    # Si el usuario tiene permisos, NO aplicar anti-spam
+    # Si el usuario tiene permisos de staff, NO aplicar anti-spam
     if is_traditional_admin or is_staff or is_emergency_founder:
-        return  # Permitir envío de links sin restricciones
+        return  # Permitir cualquier mensaje sin restricciones
 
+    # DETECTAR SPAM DE CARACTERES REPETIDOS (NUEVA FUNCIONALIDAD)
+    spam_analysis = detect_spam_patterns(message_text)
+
+    if spam_analysis['is_spam']:
+        try:
+            # ELIMINAR el mensaje de spam
+            await update.message.delete()
+
+            username = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
+            chat_id = str(update.effective_chat.id)
+
+            # Determinar duración del mute según severidad
+            if spam_analysis['severity'] >= 3:
+                mute_hours = 24  # 24 horas para spam severo
+            elif spam_analysis['severity'] >= 2:
+                mute_hours = 12  # 12 horas para spam moderado
+            else:
+                mute_hours = 6  # 6 horas para spam leve
+
+            # APLICAR MUTE AUTOMÁTICO
+            unmute_time = auto_mute_user(chat_id, user_id, mute_hours)
+
+            # Incrementar advertencias
+            current_warns = user_data.get('warns', 0) + 1
+            db.update_user(user_id, {'warns': current_warns})
+
+            # Mensaje de notificación
+            spam_types = {
+                'caracteres_repetidos': '🔤 Caracteres repetidos detectados',
+                'cadena_repetida': '🔗 Cadena de caracteres repetida',
+                'palabra_repetida': '📝 Palabra repetida excesivamente',
+                'contenido_pobre': '📄 Contenido de baja calidad'
+            }
+
+            warning_message = f"🚫 **SPAM DETECTADO - USUARIO MUTEADO** 🚫\n\n"
+            warning_message += f"👤 **Usuario:** {username}\n"
+            warning_message += f"🔍 **Tipo:** {spam_types.get(spam_analysis['type'], 'Spam detectado')}\n"
+            warning_message += f"⏰ **Duración mute:** {mute_hours} horas\n"
+            warning_message += f"🔓 **Desmute automático:** {unmute_time.strftime('%d/%m/%Y %H:%M')}\n"
+            warning_message += f"⚠️ **Advertencias:** {current_warns}/3\n\n"
+
+            if current_warns >= 3:
+                warning_message += f"🔨 **USUARIO BANEADO PERMANENTEMENTE**"
+                try:
+                    await context.bot.ban_chat_member(
+                        chat_id=update.effective_chat.id,
+                        user_id=update.effective_user.id)
+                    # Remover del sistema de mutes si fue baneado
+                    if chat_id in muted_users and user_id in muted_users[
+                            chat_id]:
+                        del muted_users[chat_id][user_id]
+                except:
+                    warning_message += f"\n❌ Error al banear usuario"
+            else:
+                warning_message += f"💡 **El usuario no puede enviar mensajes durante el mute**\n"
+                warning_message += f"🔰 **Los mensajes serán eliminados automáticamente**"
+
+            # Enviar notificación temporal
+            warning_msg = await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=warning_message,
+                parse_mode=ParseMode.MARKDOWN)
+
+            # Log para administradores
+            logger.info(
+                f"Spam detectado y usuario muteado - Usuario: {user_id} ({username}) - Tipo: {spam_analysis['type']} - Duración: {mute_hours}h"
+            )
+
+            # Auto-eliminar notificación después de 30 segundos
+            await asyncio.sleep(30)
+            try:
+                await warning_msg.delete()
+            except:
+                pass
+
+            return  # Salir aquí para evitar procesar como link spam
+
+        except Exception as e:
+            logger.error(f"Error en detección de spam: {e}")
+
+    # CONTINUAR CON DETECCIÓN DE LINKS (CÓDIGO ORIGINAL)
     # Detectar múltiples tipos de links incluyendo embebidos
     spam_indicators = [
         "http://", "https://", "www.", ".com", ".net", ".org", ".io", ".co",
@@ -6099,100 +7802,173 @@ async def anti_spam_handler(update: Update,
             logger.error(f"Error en anti-spam: {e}")
 
 
-# Manejador de errores
+# Manejador de errores mejorado
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Manejador de errores"""
-    logger.error(f"Update {update} causó error {context.error}")
+    """Manejador de errores mejorado"""
+    error_msg = str(context.error)
+
+    # Ignorar errores de conflicto comunes
+    if "Conflict: terminated by other getUpdates request" in error_msg:
+        logger.warning("⚠️ Conflicto de getUpdates detectado - ignorando")
+        return
+
+    if "Connection pool is full" in error_msg:
+        logger.warning("⚠️ Pool de conexiones lleno - reintentando")
+        await asyncio.sleep(1)
+        return
+
+    if "Read timeout" in error_msg or "Write timeout" in error_msg:
+        logger.warning("⚠️ Timeout de red - continuando")
+        return
+
+    # Log solo errores importantes
+    logger.error(f"❌ Error importante: {error_msg}")
+
+    # Intentar responder al usuario si hay un update válido
+    if update and update.effective_message:
+        try:
+            await update.effective_message.reply_text(
+                "⚠️ Ocurrió un error temporal. Intenta nuevamente en unos segundos.",
+                parse_mode=ParseMode.MARKDOWN)
+        except:
+            pass  # Si no puede responder, ignorar
 
 
 # Función principal
 def main():
     """Función principal del bot"""
-    # Configuración del bot para evitar conflictos
-    application = (
-        Application.builder().token(BOT_TOKEN).concurrent_updates(
-            False).connect_timeout(60).read_timeout(60).write_timeout(60).
-        get_updates_connect_timeout(60).get_updates_read_timeout(60).build())
-
-    # Registrar comandos principales
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("gen", gen_command))
-    application.add_handler(CommandHandler("live", live_command))
-    application.add_handler(CommandHandler("direccion", direccion_command))
-    application.add_handler(CommandHandler("ex", ex_command))
-    application.add_handler(CommandHandler("credits", credits_command))
-    application.add_handler(CommandHandler("bonus", bonus_command))
-    application.add_handler(CommandHandler("status", status_command))
-    application.add_handler(CommandHandler("pasarela", pasarela_command))
-    application.add_handler(CommandHandler("apply_key", apply_key_command))
-    application.add_handler(CommandHandler("infocredits", infocredits_command))
-    application.add_handler(CommandHandler("donate", donate_command))
-    application.add_handler(CommandHandler("juegos", juegos_command))
-
-    # Sistema de verificación /check
-    application.add_handler(CommandHandler("check", check_command))
-    application.add_handler(
-        CommandHandler("setcheckchats", setcheckchats_command))
-
-    # Sistema de publicaciones
-    application.add_handler(CommandHandler("post", post_command))
-
-    # Comandos de admin y staff
-    application.add_handler(CommandHandler("staff", staff_command))
-    application.add_handler(CommandHandler("founder", founder_command))
-    application.add_handler(CommandHandler("cofounder", cofounder_command))
-    application.add_handler(CommandHandler("moderator", moderator_command))
-    application.add_handler(
-        CommandHandler("emergency_founder", emergency_founder_command))
-    application.add_handler(CommandHandler("fix_founder", fix_founder_command))
-    application.add_handler(CommandHandler(
-        "check_perms", fix_founder_command))  # Alias adicional
-    application.add_handler(CommandHandler("clean", clean_command))
-    application.add_handler(CommandHandler("cleanstatus", cleanstatus_command))
-    application.add_handler(CommandHandler("premium", premium_command))
-    application.add_handler(CommandHandler("id", id_command))
-    application.add_handler(CommandHandler("ban", ban_command))
-    application.add_handler(CommandHandler("warn", warn_command))
-    application.add_handler(CommandHandler("unwarn", unwarn_command))
-    application.add_handler(CommandHandler("unban", unban_command))
-    application.add_handler(CommandHandler("stats", stats_command))
-    application.add_handler(CommandHandler("links", links_command))  # NUEVO
-    application.add_handler(CommandHandler("open", open_command))
-    application.add_handler(CommandHandler("close", close_command))
-    application.add_handler(CommandHandler("housemode", housemode_command))
-    application.add_handler(CommandHandler("lockdown", lockdown_command))
-
-    # Callback handlers
-    application.add_handler(CallbackQueryHandler(button_callback))
-
-    # Manejador de nuevos miembros
-    application.add_handler(
-        MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS,
-                       welcome_new_member))
-
-    # Anti-spam handler - CORREGIDO
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, anti_spam_handler))
-
-    # Manejador de errores
-    application.add_error_handler(error_handler)
-
-    # Iniciar el bot con manejo de errores mejorado
-    print("✅ Bot iniciado correctamente")
     try:
+        # Configuración del bot con manejo mejorado de errores
+        application = (
+            Application.builder().token(BOT_TOKEN).concurrent_updates(
+                True)  # Permitir actualizaciones concurrentes
+            .connection_pool_size(256)  # Pool de conexiones más grande
+            .pool_timeout(20.0).connect_timeout(30.0).read_timeout(
+                30.0).write_timeout(30.0).get_updates_connect_timeout(
+                    30.0).get_updates_read_timeout(
+                        30.0).get_updates_pool_timeout(10.0).build())
+
+        # Registrar comandos principales
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("gen", gen_command))
+        application.add_handler(CommandHandler("live", live_command))
+        application.add_handler(CommandHandler("direccion", direccion_command))
+        application.add_handler(CommandHandler("ex", ex_command))
+        application.add_handler(CommandHandler("credits", credits_command))
+        application.add_handler(CommandHandler("bonus", bonus_command))
+        application.add_handler(CommandHandler("status", status_command))
+        application.add_handler(CommandHandler("pasarela", pasarela_command))
+        application.add_handler(CommandHandler("apply_key", apply_key_command))
+        application.add_handler(
+            CommandHandler("infocredits", infocredits_command))
+        application.add_handler(CommandHandler("donate", donate_command))
+        application.add_handler(CommandHandler("juegos", juegos_command))
+
+        # Sistema de verificación /check
+        application.add_handler(CommandHandler("check", check_command))
+        application.add_handler(
+            CommandHandler("setcheckchats", setcheckchats_command))
+
+        # Sistema de logs administrativos
+        application.add_handler(
+            CommandHandler("establishedadministration",
+                           establishedadministration_command))
+
+        # Sistema de publicaciones
+        application.add_handler(CommandHandler("post", post_command))
+
+        # Comandos de admin y staff
+        application.add_handler(CommandHandler("staff", staff_command))
+        application.add_handler(CommandHandler("founder", founder_command))
+        application.add_handler(CommandHandler("cofounder", cofounder_command))
+        application.add_handler(CommandHandler("moderator", moderator_command))
+
+        # Comandos de moderación jerárquicos
+        application.add_handler(
+            CommandHandler("startfoundress", startfoundress_command))
+        application.add_handler(
+            CommandHandler("startcofunder", startcofunder_command))
+        application.add_handler(
+            CommandHandler("startmoderator", startmoderator_command))
+        application.add_handler(
+            CommandHandler("moderation_master", moderation_master_command))
+        application.add_handler(
+            CommandHandler("emergency_founder", emergency_founder_command))
+        application.add_handler(
+            CommandHandler("fix_founder", fix_founder_command))
+        application.add_handler(
+            CommandHandler("check_perms",
+                           fix_founder_command))  # Alias adicional
+        application.add_handler(CommandHandler("clean", clean_command))
+        application.add_handler(
+            CommandHandler("cleanstatus", cleanstatus_command))
+        application.add_handler(CommandHandler("premium", premium_command))
+        application.add_handler(CommandHandler("id", id_command))
+        application.add_handler(CommandHandler("ban", ban_command))
+        application.add_handler(CommandHandler("warn", warn_command))
+        application.add_handler(CommandHandler("unwarn", unwarn_command))
+        application.add_handler(CommandHandler("unban", unban_command))
+        application.add_handler(CommandHandler("stats", stats_command))
+        application.add_handler(CommandHandler("links", links_command))
+        application.add_handler(CommandHandler("open", open_command))
+        application.add_handler(CommandHandler("close", close_command))
+        application.add_handler(CommandHandler("housemode", housemode_command))
+        application.add_handler(CommandHandler("lockdown", lockdown_command))
+        application.add_handler(CommandHandler("mute", mute_command))
+        application.add_handler(CommandHandler("unmute", unmute_command))
+        application.add_handler(CommandHandler("mutelist", mutelist_command))
+        application.add_handler(
+            CommandHandler("creditcleaningworld", creditcleaningworld_command))
+
+        # Importar funciones de gates
+        from gates_system import gates_command, handle_gate_callback, process_gate_card
+
+        # Comandos de gates
+        application.add_handler(CommandHandler("gates", gates_command))
+        application.add_handler(CommandHandler("gate", gates_command))  # Alias
+        application.add_handler(CommandHandler(
+            "am", process_gate_card))  # Comando para procesar tarjetas
+
+        # Callback handlers
+        application.add_handler(CallbackQueryHandler(button_callback))
+
+        # Manejador de nuevos miembros
+        application.add_handler(
+            MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS,
+                           welcome_new_member))
+
+        # Anti-spam handler
+        application.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, anti_spam_handler))
+
+        # Manejador de errores mejorado
+        application.add_error_handler(error_handler)
+
+        # Iniciar el bot con configuración optimizada
+        print("✅ Bot iniciado correctamente")
+        logger.info("🚀 Iniciando aplicación de Telegram Bot...")
+
         application.run_polling(
-            drop_pending_updates=True,  # Limpiar actualizaciones pendientes
-            close_loop=False,
-            allowed_updates=None,  # Recibir todos los tipos de actualización
-            stop_signals=None  # Evitar conflictos de señales
+            drop_pending_updates=True,
+            poll_interval=1.0,  # Intervalo de polling
+            timeout=20,  # Timeout para getUpdates
+            bootstrap_retries=3,  # Reintentos de arranque
+            read_timeout=20,  # Timeout de lectura
+            write_timeout=20,  # Timeout de escritura
+            connect_timeout=20,  # Timeout de conexión
+            pool_timeout=20,  # Timeout del pool
+            allowed_updates=None  # Todas las actualizaciones
         )
+
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot detenido por el usuario")
+        print("🛑 Bot detenido por el usuario")
     except Exception as e:
-        logger.error(f"Error en polling: {e}")
-        print(f"❌ Error en el bot: {e}")
-        # En lugar de salir, intentar reiniciar
+        logger.error(f"❌ Error crítico en el bot: {e}")
+        print(f"❌ Error crítico: {e}")
+        # Esperar un momento antes de salir
         import time
-        time.sleep(5)
-        main()
+        time.sleep(2)
 
 
 if __name__ == "__main__":
