@@ -1146,7 +1146,6 @@ class Database:
             r'youtu\.be/\S+', r'youtube\.com/\S+', r'bit\.ly/\S+',
             r'tinyurl\.com/\S+', r'[a-zA-Z0-9]{2,}(https?://\S+)',
             r'[a-zA-Z0-9]{2,}(www\.\S+)',
-            r'\S{15,}\.(com|net|org|io|me|gg|tv|ly|co)'
         ]
 
         links = []
