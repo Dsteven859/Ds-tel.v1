@@ -1136,95 +1136,29 @@ class Database:
         return link_id
 
     def extract_links_from_text(self, text: str) -> list:
-        """Extraer todos los links detectados del texto incluyendo embebidos - VERSIÓN MEJORADA"""
+        """Detectar cualquier tipo de enlace, incluso camuflado"""
         import re
 
-        # Patrones para detectar diferentes tipos de enlaces - AMPLIADO
-        patterns = [
-            r'https?://[^\s]+',  # URLs completas
-            r'www\.[^\s]+',  # URLs con www
-            r't\.me/[^\s]+',  # Links de Telegram
-            r'telegram\.me/[^\s]+',  # Telegram alternativo
-            r'tg://[^\s]+',  # Protocolo Telegram
-            r'[^\s]+\.(com|net|org|io|co|me|ly|gg|tv|cc|tk|ml|ga|cf|gl)[^\s]*',  # Dominios comunes expandido
-            r'discord\.gg/[^\s]+',  # Discord invites
-            r'youtu\.be/[^\s]+',  # YouTube short links
-            r'bit\.ly/[^\s]+',  # Bit.ly links
-            r'tinyurl\.com/[^\s]+',  # TinyURL
-        ]
-
-        # NUEVO: Patrones mejorados para enlaces embebidos y texto pegado
-        embedded_patterns = [
-            r'[^\s]{15,}\.(?:com|net|org|io|co|me|ly|gg|tv|tk|ml)[^\s]*',  # Dominios largos embebidos
-            r'[^\s]*(?:discord|telegram|youtube|bit\.ly|tinyurl|t\.me)[^\s]*',  # Servicios embebidos
-            r'[A-Z]{2,}(?:https?://|www\.)[^\s]*',  # Texto en mayúsculas + URL
-            r'[a-zA-Z]+(?:https?://|t\.me/)[^\s]*',  # Cualquier texto pegado a URL
-            r'[a-zA-Z]+www\.[^\s]*',  # Texto pegado a www
-            # ESPECÍFICO para casos como "AQUIhttps://t.me/+xyz"
-            r'[a-zA-Z]+(?=https?://)',  # Texto inmediatamente antes de URL
-            r'[a-zA-Z]{3,}(?=t\.me/)',  # Texto antes de enlaces de Telegram
+        link_patterns = [
+            r'https?://\S+', r'www\.\S+',
+            r'\b\w+\.(com|net|org|io|co|me|ly|gg|tv|tk|ml|ga|cf|gl)(/[^\s]*)?',
+            r't\.me/\S+', r'telegram\.me/\S+', r'tg://\S+', r'discord\.gg/\S+',
+            r'youtu\.be/\S+', r'youtube\.com/\S+', r'bit\.ly/\S+',
+            r'tinyurl\.com/\S+', r'[a-zA-Z0-9]{2,}(https?://\S+)',
+            r'[a-zA-Z0-9]{2,}(www\.\S+)',
+            r'\S{15,}\.(com|net|org|io|me|gg|tv|ly|co)'
         ]
 
         links = []
-
-        # Buscar enlaces estándar
-        for pattern in patterns:
+        for pattern in link_patterns:
             matches = re.findall(pattern, text, re.IGNORECASE)
-            links.extend(matches)
+            if matches:
+                if isinstance(matches[0], tuple):
+                    links.extend(["".join(m) for m in matches])
+                else:
+                    links.extend(matches)
 
-        # Buscar enlaces embebidos con filtros mejorados
-        for pattern in embedded_patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            # Filtrar solo los que realmente parecen enlaces
-            filtered_matches = [
-                match for match in matches
-                if (('.' in match or '://' in match or 't.me' in match)
-                    and len(match) > 5)
-            ]
-            links.extend(filtered_matches)
-
-        # NUEVO: Búsqueda específica de texto con URLs embebidas palabra por palabra
-        words = text.split()
-        for word in words:
-            # Detectar si contiene indicadores de URL
-            url_indicators = [
-                'http', 'www', '.com', '.net', '.org', '.io', '.me', 't.me',
-                '://'
-            ]
-            if any(indicator in word.lower() for indicator in url_indicators):
-                links.append(word)
-
-            # Detectar palabras sospechosamente largas con caracteres de URL
-            if (len(word) > 20
-                    and any(char in word for char in ['.', '/', ':', '+', '-'])
-                    and not word.isdigit()):
-                links.append(f"[TEXTO_SOSPECHOSO:{word[:25]}...]")
-
-        # Detectar caracteres Unicode sospechosos
-        unicode_suspicious = re.findall(
-            r'[\u200B-\u200F\u202A-\u202E\u2060-\u2064]', text)
-        if unicode_suspicious:
-            links.append("[TEXTO_CON_UNICODE_SOSPECHOSO]")
-
-        # NUEVO: Detectar patrones específicos problemáticos
-        # Buscar texto que contenga "AQUI" o similar seguido de URLs
-        suspicious_word_patterns = [
-            r'(?:AQUI|HERE|CLICK|ENTRA|LINK)[^\s]*(?:https?://|t\.me/|www\.)',
-            r'[A-Z]{3,}[^\s]*(?:https?://|t\.me/)',  # Palabras en mayúsculas con URLs
-        ]
-
-        for pattern in suspicious_word_patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for match in matches:
-                links.append(f"[ENLACE_EMBEBIDO:{match[:30]}...]")
-
-        # Remover duplicados manteniendo el orden
-        unique_links = list(dict.fromkeys(links))
-
-        # Filtrar links muy cortos que pueden ser falsos positivos
-        filtered_links = [link for link in unique_links if len(link) > 3]
-
-        return filtered_links
+        return list(set(links))
 
     def get_deleted_links_by_user(self, user_id: str) -> list:
         """Obtener historial de links eliminados de un usuario"""
@@ -1772,6 +1706,90 @@ def admin_only(func):
     return wrapper
 
 
+# Sistema de logs administrativos
+async def send_admin_log(context,
+                         action_type: str,
+                         admin_user,
+                         target_user_id: str,
+                         reason: str,
+                         group_id: str,
+                         additional_data: dict = None):
+    """Enviar log administrativo al canal configurado"""
+    try:
+        # Obtener configuración del canal de logs
+        log_config = db.get_admin_log_channel(group_id)
+
+        if not log_config or not log_config.get('channel_id'):
+            logger.info(
+                f"No hay canal de logs configurado para grupo {group_id}")
+            return
+
+        admin_channel_id = log_config['channel_id']
+
+        # Crear mensaje de log
+        log_message = f"📋 **LOG ADMINISTRATIVO** 📋\n\n"
+        log_message += f"🔨 **Acción:** {action_type}\n"
+        log_message += f"👮‍♂️ **Admin:** {admin_user.first_name}"
+
+        if admin_user.username:
+            log_message += f" (@{admin_user.username})"
+
+        log_message += f"\n🆔 **Admin ID:** `{admin_user.id}`\n"
+        log_message += f"🎯 **Usuario objetivo:** `{target_user_id}`\n"
+        log_message += f"📝 **Razón:** {reason}\n"
+        log_message += f"🏠 **Grupo:** `{group_id}`\n"
+        log_message += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+
+        # Agregar datos adicionales si existen
+        if additional_data:
+            log_message += f"\n📊 **Datos adicionales:**\n"
+            for key, value in additional_data.items():
+                log_message += f"• **{key}:** {value}\n"
+
+        log_message += f"\n🤖 **Bot:** @ChernobilChLv_bot"
+
+        # Enviar al canal de logs
+        await context.bot.send_message(chat_id=admin_channel_id,
+                                       text=log_message,
+                                       parse_mode=ParseMode.MARKDOWN)
+
+        # Guardar en base de datos también
+        db.log_admin_action(action_type=action_type,
+                            admin_user=admin_user,
+                            target_user_id=target_user_id,
+                            reason=reason,
+                            group_id=group_id,
+                            additional_data=additional_data)
+
+        logger.info(f"Log administrativo enviado exitosamente: {action_type}")
+
+    except Exception as e:
+        logger.error(f"Error enviando log administrativo: {e}")
+        # No hacer raise para que el comando principal no falle
+
+
+# Sistema de mutes automáticos
+muted_users = {
+}  # {chat_id: {user_id: {'unmute_time': datetime, 'reason': str, 'muted_by': str}}}
+
+
+def auto_mute_user(chat_id: str, user_id: str, duration_hours: float,
+                   reason: str, muted_by: str):
+    """Agregar usuario al sistema de mutes automáticos"""
+    unmute_time = datetime.now() + timedelta(hours=duration_hours)
+
+    if chat_id not in muted_users:
+        muted_users[chat_id] = {}
+
+    muted_users[chat_id][user_id] = {
+        'unmute_time': unmute_time,
+        'reason': reason,
+        'muted_by': muted_by
+    }
+
+    return unmute_time
+
+
 # Decorador para verificar mantenimiento
 def check_maintenance(func):
 
@@ -1914,11 +1932,8 @@ def bot_admin_only(func):
         if not (is_bot_admin or is_founder_in_db):
             await update.message.reply_text(
                 "❌ **ACCESO ULTRA RESTRINGIDO** ❌\n\n"
-                "🔒 **Este comando es EXCLUSIVO para:**\n"
-                "• Administradores principales\n"
-                "• Fundadores del sistema\n\n"
-                "🚫 **No tienes acceso**\n"
-                "💡 **Contacta a @SteveCHRB para permisos especiales**",
+                "🔒 **Este comando es EXCLUSIVO**\n"
+                "🚫 **No tienes acceso**\n",
                 parse_mode=ParseMode.MARKDOWN)
             return
         return await func(update, context)
@@ -3868,8 +3883,7 @@ async def staff_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• Puede usar /clean, /ban, /warn\n\n"
             f"**🔹 NIVEL 3 - MODERADOR:**\n"
             f"• Funciones básicas de supervisión\n"
-            f"• Acceso limitado\n\n"
-            f"**Comandos:**\n",
+            f"• Acceso limitado\n\n",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -4300,12 +4314,9 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             target_user = None
     else:
-        await update.message.reply_text(
-            "🔍 **INFORMACIÓN DE USUARIO** 🔍\n\n"
-            "**Uso:** `/id [user_id]`\n"
-            "**Ejemplo:** `/id 123456789`\n\n",
-            parse_mode=ParseMode.MARKDOWN)
-        return
+        # Si no hay argumentos ni respuesta, mostrar información del usuario que ejecuta el comando
+        target_user_id = str(update.effective_user.id)
+        target_user = update.effective_user
 
     user_data = db.get_user(target_user_id)
 
@@ -5993,7 +6004,7 @@ async def fix_founder_command(update: Update,
 
 @admin_only
 async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mutear usuario manualmente"""
+    """Mutear usuario manualmente - Versión mejorada"""
     args = context.args
     chat_id = str(update.effective_chat.id)
 
@@ -6010,22 +6021,55 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• `48h` - 48 horas\n\n"
             "**Ejemplos:**\n"
             "• `/mute 123456789 2h Spam excesivo`\n"
-            "• `/mute 123456789` (12h por defecto)",
+            "• `/mute 123456789` (12h por defecto)\n\n"
+            "⚠️ **Solo para casos serios:** Spam, flood, comportamiento disruptivo",
             parse_mode=ParseMode.MARKDOWN)
         return
 
-    target_user_id = args[0]
+    # Validar user_id
+    target_user_id = args[0].strip()
+    if not target_user_id.isdigit():
+        await update.message.reply_text(
+            "❌ **ID INVÁLIDO**\n\n"
+            "💡 El ID del usuario debe ser numérico\n"
+            "📋 **Ejemplo:** `/mute 123456789 2h Spam`")
+        return
+
+    target_user_id_int = int(target_user_id)
+
+    # Verificar que no sea el propio usuario
+    if target_user_id_int == update.effective_user.id:
+        await update.message.reply_text(
+            "❌ **NO PUEDES MUTEARTE A TI MISMO**\n\n"
+            "💡 Verifica el ID del usuario")
+        return
 
     # Verificar que no sea staff
-    target_user_id_int = int(target_user_id) if target_user_id.isdigit() else 0
     is_target_admin = target_user_id_int in ADMIN_IDS
     target_staff = db.get_staff_role(target_user_id)
 
     if is_target_admin or target_staff:
         await update.message.reply_text(
             "❌ **NO SE PUEDE MUTEAR STAFF**\n\n"
-            "🛡️ Los administradores, fundadores, co-fundadores y moderadores no pueden ser muteados",
+            "🛡️ Los administradores, fundadores, co-fundadores y moderadores están protegidos",
             parse_mode=ParseMode.MARKDOWN)
+        return
+
+    # Verificar si ya está muteado
+    if (chat_id in muted_users and target_user_id in muted_users[chat_id]
+            and datetime.now()
+            < muted_users[chat_id][target_user_id]['unmute_time']):
+        current_mute = muted_users[chat_id][target_user_id]
+        time_left = current_mute['unmute_time'] - datetime.now()
+        hours_left = int(time_left.total_seconds() // 3600)
+        minutes_left = int((time_left.total_seconds() % 3600) // 60)
+
+        await update.message.reply_text(
+            f"⚠️ **USUARIO YA ESTÁ MUTEADO**\n\n"
+            f"👤 **Usuario:** {target_user_id}\n"
+            f"⏰ **Tiempo restante:** {hours_left}h {minutes_left}m\n"
+            f"📝 **Razón actual:** {current_mute['reason']}\n\n"
+            f"💡 Usa `/unmute {target_user_id}` para desmutear")
         return
 
     # Procesar duración
@@ -6034,44 +6078,87 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         duration_str = args[1].lower()
         try:
             if duration_str.endswith('m'):
-                duration_hours = int(duration_str[:-1]) / 60
+                duration_minutes = int(duration_str[:-1])
+                if duration_minutes < 5:
+                    await update.message.reply_text(
+                        "❌ **Duración mínima:** 5 minutos")
+                    return
+                duration_hours = duration_minutes / 60
             elif duration_str.endswith('h'):
                 duration_hours = int(duration_str[:-1])
+                if duration_hours < 1:
+                    await update.message.reply_text(
+                        "❌ **Duración mínima:** 1 hora")
+                    return
+                if duration_hours > 72:
+                    await update.message.reply_text(
+                        "❌ **Duración máxima:** 72 horas")
+                    return
             elif duration_str.isdigit():
                 duration_hours = int(duration_str)
+                if duration_hours > 72:
+                    duration_hours = 72
         except ValueError:
             duration_hours = 12  # Fallback a 12 horas
 
     # Procesar razón
     reason = ' '.join(
-        args[2:]) if len(args) > 2 else "Mute manual por administrador"
+        args[2:]) if len(args) > 2 else "Violación de normas del grupo"
 
-    # Aplicar mute
-    unmute_time = auto_mute_user(chat_id, target_user_id, int(duration_hours))
-
-    # Obtener información del usuario si es posible
+    # Verificar que el usuario existe en el chat
     try:
         chat_member = await context.bot.get_chat_member(
-            update.effective_chat.id, int(target_user_id))
+            update.effective_chat.id, target_user_id_int)
         target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
-    except:
-        target_username = f"ID: {target_user_id}"
 
-    response = f"🔇 **USUARIO MUTEADO** 🔇\n\n"
+        # Verificar que no sea un bot
+        if chat_member.user.is_bot:
+            await update.message.reply_text("❌ **NO SE PUEDE MUTEAR BOTS**\n\n"
+                                            "💡 Los bots no pueden ser muteados"
+                                            )
+            return
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ **USUARIO NO ENCONTRADO**\n\n"
+            f"💡 El usuario con ID `{target_user_id}` no está en este chat\n"
+            f"🔍 Verifica que el ID sea correcto")
+        return
+
+    # Aplicar mute
+    unmute_time = auto_mute_user(chat_id, target_user_id, duration_hours,
+                                 reason, update.effective_user.first_name)
+
+    # Enviar log administrativo
+    await send_admin_log(context=context,
+                         action_type='MUTE',
+                         admin_user=update.effective_user,
+                         target_user_id=target_user_id,
+                         reason=reason,
+                         group_id=chat_id,
+                         additional_data={
+                             'duration_hours': duration_hours,
+                             'unmute_time': unmute_time.isoformat(),
+                             'target_username': target_username
+                         })
+
+    response = f"🔇 **USUARIO MUTEADO EXITOSAMENTE** 🔇\n\n"
     response += f"👤 **Usuario:** {target_username}\n"
-    response += f"⏰ **Duración:** {duration_hours} horas\n"
-    response += f"🔓 **Desmute:** {unmute_time.strftime('%d/%m/%Y %H:%M')}\n"
+    response += f"🆔 **ID:** `{target_user_id}`\n"
+    response += f"⏰ **Duración:** {duration_hours}h\n"
+    response += f"🔓 **Desmute automático:** {unmute_time.strftime('%d/%m/%Y %H:%M')}\n"
     response += f"📝 **Razón:** {reason}\n"
-    response += f"👮‍♂️ **Por:** {update.effective_user.first_name}\n"
+    response += f"👮‍♂️ **Muteado por:** {update.effective_user.first_name}\n"
     response += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-    response += f"💡 **El usuario no podrá enviar mensajes durante este período**"
+    response += f"💡 **El usuario no podrá enviar mensajes durante este período**\n"
+    response += f"🔧 **Desmute manual:** `/unmute {target_user_id}`"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
 @admin_only
 async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Desmutear usuario manualmente"""
+    """Desmutear usuario manualmente - Versión mejorada"""
     args = context.args
     chat_id = str(update.effective_chat.id)
 
@@ -6079,40 +6166,79 @@ async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🔊 **DESMUTEAR USUARIO** 🔊\n\n"
             "**Uso:** `/unmute [user_id]`\n\n"
-            "**Ejemplo:** `/unmute 123456789`",
+            "**Ejemplo:** `/unmute 123456789`\n\n"
+            "💡 **También puedes usar:** `/mutelist` para ver usuarios muteados",
             parse_mode=ParseMode.MARKDOWN)
         return
 
-    target_user_id = args[0]
+    # Validar user_id
+    target_user_id = args[0].strip()
+    if not target_user_id.isdigit():
+        await update.message.reply_text(
+            "❌ **ID INVÁLIDO**\n\n"
+            "💡 El ID del usuario debe ser numérico\n"
+            "📋 **Ejemplo:** `/unmute 123456789`")
+        return
+
+    target_user_id_int = int(target_user_id)
 
     # Verificar si el usuario está muteado
-    if chat_id not in muted_users or target_user_id not in muted_users[chat_id]:
+    if (chat_id not in muted_users
+            or target_user_id not in muted_users[chat_id] or datetime.now()
+            >= muted_users[chat_id][target_user_id]['unmute_time']):
+
         await update.message.reply_text(
             f"❌ **USUARIO NO ESTÁ MUTEADO**\n\n"
-            f"👤 **Usuario ID:** {target_user_id}\n"
-            f"💡 Este usuario no está en la lista de muteados",
+            f"👤 **Usuario ID:** `{target_user_id}`\n"
+            f"💡 Este usuario no está en la lista de muteados activos\n\n"
+            f"🔍 **Usa `/mutelist` para ver usuarios muteados**",
             parse_mode=ParseMode.MARKDOWN)
         return
+
+    # Obtener datos del mute antes de remover
+    mute_data = muted_users[chat_id][target_user_id]
+    original_reason = mute_data['reason']
+    muted_by = mute_data['muted_by']
+
+    # Calcular tiempo que estuvo muteado
+    original_unmute_time = mute_data['unmute_time']
+    time_served = datetime.now() - (original_unmute_time - timedelta(hours=12)
+                                    )  # Aproximado
 
     # Remover del sistema de mutes
     del muted_users[chat_id][target_user_id]
-    if not muted_users[
-            chat_id]:  # Si no hay más usuarios muteados, eliminar el chat
+    if not muted_users[chat_id]:
         del muted_users[chat_id]
 
     # Obtener información del usuario si es posible
     try:
         chat_member = await context.bot.get_chat_member(
-            update.effective_chat.id, int(target_user_id))
+            update.effective_chat.id, target_user_id_int)
         target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
     except:
         target_username = f"ID: {target_user_id}"
 
-    response = f"🔊 **USUARIO DESMUTEADO** 🔊\n\n"
+    # Enviar log administrativo
+    await send_admin_log(context=context,
+                         action_type='UNMUTE',
+                         admin_user=update.effective_user,
+                         target_user_id=target_user_id,
+                         reason="Desmute manual",
+                         group_id=chat_id,
+                         additional_data={
+                             'original_reason': original_reason,
+                             'originally_muted_by': muted_by,
+                             'target_username': target_username
+                         })
+
+    response = f"🔊 **USUARIO DESMUTEADO EXITOSAMENTE** 🔊\n\n"
     response += f"👤 **Usuario:** {target_username}\n"
+    response += f"🆔 **ID:** `{target_user_id}`\n"
     response += f"✅ **Estado:** Puede enviar mensajes nuevamente\n"
-    response += f"👮‍♂️ **Desmuteado por:** {update.effective_user.first_name}\n"
-    response += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+    response += f"📝 **Razón original:** {original_reason}\n"
+    response += f"👮‍♂️ **Muteado originalmente por:** {muted_by}\n"
+    response += f"🔓 **Desmuteado por:** {update.effective_user.first_name}\n"
+    response += f"📅 **Fecha de desmute:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
     response += f"💡 **El mute ha sido removido manualmente**"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
@@ -6120,21 +6246,25 @@ async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @admin_only
 async def mutelist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver lista de usuarios muteados en el chat actual"""
+    """Ver lista de usuarios muteados en el chat actual - Versión mejorada"""
     chat_id = str(update.effective_chat.id)
 
     if chat_id not in muted_users or not muted_users[chat_id]:
         await update.message.reply_text(
-            "✅ **NO HAY USUARIOS MUTEADOS**\n\n"
-            "💡 Actualmente no hay usuarios muteados en este chat",
+            "✅ **NO HAY USUARIOS MUTEADOS** ✅\n\n"
+            "💡 Actualmente no hay usuarios muteados en este chat\n\n",
             parse_mode=ParseMode.MARKDOWN)
         return
 
-    response = f"🔇 **USUARIOS MUTEADOS** 🔇\n\n"
+    response = f"🔇 **LISTA DE USUARIOS MUTEADOS** 🔇\n\n"
     current_time = datetime.now()
 
     muted_count = 0
-    for user_id, unmute_time in muted_users[chat_id].items():
+    expired_users = []
+
+    for user_id, mute_data in muted_users[chat_id].items():
+        unmute_time = mute_data['unmute_time']
+
         if current_time < unmute_time:  # Solo mostrar mutes activos
             muted_count += 1
             time_left = unmute_time - current_time
@@ -6147,16 +6277,34 @@ async def mutelist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     update.effective_chat.id, int(user_id))
                 username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
             except:
-                username = f"ID: {user_id}"
+                username = f"Usuario {user_id}"
 
             response += f"👤 **{username}**\n"
-            response += f"⏰ Tiempo restante: {hours_left}h {minutes_left}m\n"
-            response += f"🔓 Desmute: {unmute_time.strftime('%d/%m %H:%M')}\n\n"
+            response += f"🆔 **ID:** `{user_id}`\n"
+            response += f"⏰ **Tiempo restante:** {hours_left}h {minutes_left}m\n"
+            response += f"🔓 **Desmute automático:** {unmute_time.strftime('%d/%m %H:%M')}\n"
+            response += f"📝 **Razón:** {mute_data['reason']}\n"
+            response += f"👮‍♂️ **Muteado por:** {mute_data['muted_by']}\n"
+            response += f"🔧 **Desmute manual:** `/unmute {user_id}`\n"
+            response += f"─────────────────────────\n"
+        else:
+            # Marcar para limpieza
+            expired_users.append(user_id)
+
+    # Limpiar usuarios con mutes expirados
+    for user_id in expired_users:
+        del muted_users[chat_id][user_id]
+
+    if not muted_users[chat_id]:
+        del muted_users[chat_id]
 
     if muted_count == 0:
-        response = "✅ **NO HAY USUARIOS MUTEADOS ACTIVOS**"
+        response = "✅ **NO HAY USUARIOS MUTEADOS ACTIVOS** ✅\n\n"
+        response += "💡 Todos los mutes han expirado automáticamente"
     else:
-        response += f"📊 **Total muteados:** {muted_count}"
+        response += f"\n📊 **Total usuarios muteados:** {muted_count}\n"
+        response += f"⏰ **Consultado:** {current_time.strftime('%d/%m/%Y %H:%M')}\n\n"
+        response += f"💡 **Los mutes expiran automáticamente**"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -7439,13 +7587,14 @@ async def welcome_new_member(update: Update,
             await update.message.reply_text(simple_welcome)
 
 
-# Sistema de Mutes
-muted_users = {}  # Chat ID -> {user_id: unmute_time}
+# Sistema de Mutes mejorado
+muted_users = {
+}  # Chat ID -> {user_id: {'unmute_time': datetime, 'reason': str, 'muted_by': str}}
 
 
 async def check_user_muted(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Verificar si un usuario está muteado y eliminar su mensaje si es necesario"""
-    if not update.message:
+    if not update.message or not update.message.text:
         return False
 
     chat_id = str(update.effective_chat.id)
@@ -7460,14 +7609,14 @@ async def check_user_muted(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return False
 
     # Verificar si el mute ha expirado
-    unmute_time = muted_users[chat_id][user_id]
+    mute_data = muted_users[chat_id][user_id]
+    unmute_time = mute_data['unmute_time']
     current_time = datetime.now()
 
     if current_time >= unmute_time:
         # El mute ha expirado, remover del diccionario
         del muted_users[chat_id][user_id]
-        if not muted_users[
-                chat_id]:  # Si no hay más usuarios muteados, eliminar el chat
+        if not muted_users[chat_id]:
             del muted_users[chat_id]
         return False
 
@@ -7479,13 +7628,21 @@ async def check_user_muted(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return False
 
 
-def auto_mute_user(chat_id: str, user_id: str, duration_hours: int = 12):
+def auto_mute_user(chat_id: str,
+                   user_id: str,
+                   duration_hours: int = 12,
+                   reason: str = "Mute automático",
+                   muted_by: str = "Sistema"):
     """Mutear usuario automáticamente"""
     if chat_id not in muted_users:
         muted_users[chat_id] = {}
 
     unmute_time = datetime.now() + timedelta(hours=duration_hours)
-    muted_users[chat_id][user_id] = unmute_time
+    muted_users[chat_id][user_id] = {
+        'unmute_time': unmute_time,
+        'reason': reason,
+        'muted_by': muted_by
+    }
 
     return unmute_time
 
@@ -7670,112 +7827,44 @@ async def anti_spam_handler(update: Update,
     contains_spam = any(indicator in message_text_lower
                         for indicator in spam_indicators)
 
-    # NUEVO: Detectar enlaces embebidos y caracteres Unicode sospechosos
-    if not contains_spam:
-        import re
-
-        # Detectar caracteres Unicode de control que pueden ocultar enlaces
-        unicode_patterns = [
-            r'[\u200B-\u200F\u202A-\u202E\u2060-\u2064]',  # Caracteres de control
-            r'[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]',  # Espacios no estándar
-            r'[\u034F\u061C\u180E]',  # Caracteres invisibles
-        ]
-
-        # Verificar si hay caracteres Unicode sospechosos
-        has_unicode_spam = any(
-            re.search(pattern, message_text) for pattern in unicode_patterns)
-
-        # Detectar texto con posibles enlaces embebidos
-        # Palabras muy largas sin espacios que pueden ocultar URLs
-        words = message_text.split()
-        suspicious_words = [
-            word for word in words
-            if len(word) > 30 and not word.isdigit() and any(
-                char in word.lower() for char in ['.', '/', ':'])
-        ]
-
-        # Detectar patrones de enlaces embebidos (texto con características de URL)
-        embedded_link_patterns = [
-            r'[^\s]{20,}\.(?:com|net|org|io|co|me|ly|gg|tv)[^\s]*',  # Dominios largos
-            r'[^\s]*(?:discord|telegram|youtube|bit\.ly)[^\s]*',  # Servicios conocidos
-            r'[^\s]*://[^\s]*',  # Protocolo sin espacios
-        ]
-
-        has_embedded_links = any(
-            re.search(pattern, message_text, re.IGNORECASE)
-            for pattern in embedded_link_patterns)
-
-        # Detectar si hay muchos caracteres no ASCII (posible ofuscación)
-        non_ascii_count = sum(1 for char in message_text if ord(char) > 127)
-        has_excessive_unicode = non_ascii_count > len(
-            message_text) * 0.3  # Más del 30%
-
-        # Marcar como spam si se detecta cualquiera de estos patrones
-        contains_spam = (has_unicode_spam or len(suspicious_words) > 0
-                         or has_embedded_links or has_excessive_unicode)
-
-    if contains_spam:
+    # 🔍 DETECCIÓN DE ENLACES (nueva forma limpia)
+    detected_links = db.extract_links_from_text(message_text)
+    if detected_links:
         try:
-            # GUARDAR el link antes de eliminarlo
             username = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
             chat_id = str(update.effective_chat.id)
             link_id = db.save_deleted_link(user_id, username, chat_id,
                                            message_text)
 
-            # BORRAR el mensaje automáticamente
             await update.message.delete()
-
-            # Incrementar advertencias
             current_warns = user_data.get('warns', 0) + 1
             db.update_user(user_id, {'warns': current_warns})
 
-            # Determinar tipo de detección para el mensaje
-            detection_type = "enlace estándar"
-            if any(ord(char) > 127 for char in message_text):
-                detection_type = "enlace embebido/Unicode"
-            elif len(message_text) > 100:
-                detection_type = "enlace oculto en texto"
-
-            # Enviar advertencia automática CON ID del link guardado
             warning_message = f"🚫 **LINK DETECTADO Y ELIMINADO** 🚫\n\n"
-            warning_message += f"👤 **Usuario:** {update.effective_user.first_name}\n"
-            warning_message += f"🔍 **Tipo:** {detection_type}\n"
-            warning_message += f"🆔 **Link ID:** `{link_id}`\n"
-            warning_message += f"⚠️ **Advertencias:** {current_warns}/3\n\n"
+            warning_message += f"👤 **Usuario:** {username}\n"
+            warning_message += f"🔗 **Link(s):** {', '.join(detected_links[:2])}\n"
+            warning_message += f"🆔 **ID del registro:** `{link_id}`\n"
+            warning_message += f"⚠️ **Advertencias:** {current_warns}/3\n"
 
             if current_warns >= 3:
-                warning_message += f"🔨 **USUARIO BANEADO POR SPAM**"
-                try:
-                    await context.bot.ban_chat_member(
-                        chat_id=update.effective_chat.id,
-                        user_id=update.effective_user.id)
-                except:
-                    warning_message += f"\n❌ Error al banear usuario"
+                warning_message += "\n🔨 **USUARIO BANEADO POR SPAM**"
+                await context.bot.ban_chat_member(
+                    chat_id=update.effective_chat.id,
+                    user_id=update.effective_user.id)
             else:
-                warning_message += f"💡 **Política:** Solo staff puede enviar enlaces\n"
-                warning_message += f"📝 **El link ha sido registrado para revisión**\n"
-                warning_message += f"🔰 **Para obtener permisos contacta a los administradores**"
+                warning_message += "\n📝 **Para evitar esto, no envíes enlaces**"
 
-            # Enviar mensaje temporal que se auto-elimina
-            warning_msg = await context.bot.send_message(
+            msg = await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text=warning_message,
-                parse_mode=ParseMode.MARKDOWN)
-
-            # Log para administradores
-            logger.info(
-                f"Link eliminado (usuario sin permisos) - Usuario: {user_id} ({username}) - Chat: {chat_id} - Link ID: {link_id}"
-            )
-
-            # Auto-eliminar mensaje de advertencia después de 15 segundos
-            await asyncio.sleep(15)
-            try:
-                await warning_msg.delete()
-            except:
-                pass
-
+                parse_mode="Markdown")
+            await asyncio.sleep(2)
+            await msg.delete()
         except Exception as e:
-            logger.error(f"Error en anti-spam: {e}")
+            logger.error(f"Error al eliminar mensaje con link: {e}")
+        return  # Salir del handler si es un link
+
+        # Log para administradores
 
 
 # Manejador de errores mejorado
