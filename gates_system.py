@@ -436,13 +436,13 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_authorized:
         if is_founder:
             user_type = "👑 FUNDADOR"
-            efectividad_text = "8-25% (Realista Pro)"
+            efectividad_text = "PRO"
         elif is_cofounder:
             user_type = "💎 CO-FUNDADOR"
-            efectividad_text = "8-25% (Realista Pro)"
+            efectividad_text = "PRO"
         else:
             user_type = "💎 PREMIUM"
-            efectividad_text = "8-25% (Realista)"
+            efectividad_text = "PRO"
         access_text = "✅ ACCESO COMPLETO"
     else:
         user_type = "🆓 USUARIO ESTÁNDAR"
@@ -458,16 +458,16 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response += f"⚡ **Efectividad:** {efectividad_text}\n\n"
     
     if not is_authorized:
-        response += f"🚫 **AVISO:** Solo usuarios Premium, Fundadores y Co-Fundadores pueden procesar tarjetas\n"
+        response += f"🚫 **AVISO:** Solo usuarios Premium\n"
         response += f"👀 **Puedes explorar el menú pero no usar las funciones**\n\n"
     
     response += f"🌟 **GATES DISPONIBLES:**\n"
-    response += f"🔵 **Stripe Gate** - Pagos premium (8-25%)\n"
-    response += f"🟠 **Amazon Gate** - E-commerce (5-18%)\n"
-    response += f"🔴 **PayPal Gate** - Wallet validation (6-20%)\n"
-    response += f"🟡 **Ayden Gate** - Procesador EU (3-15%)\n"
-    response += f"🟢 **Auth Gate** - Autorización (4-16%)\n"
-    response += f"⚫ **CCN Charge** - Cargo directo (7-22%)\n\n"
+    response += f"🔵 **Stripe Gate**\n"
+    response += f"🟠 **Amazon Gate**\n"
+    response += f"🔴 **PayPal Gate**\n"
+    response += f"🟡 **Ayden Gate**\n"
+    response += f"🟢 **Auth Gate**\n"
+    response += f"⚫ **CCN Charge**\n\n"
     
     if is_authorized:
         response += f"💡 **Selecciona el gate que deseas usar:**"
@@ -498,15 +498,15 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if query.data == 'gates_status':
         status_text = f"📊 **ESTADO DE GATES** 📊\n\n"
-        status_text += f"🔵 **Stripe Gate:** 🟢 Online (8-25% efectividad)\n"
-        status_text += f"🟠 **Amazon Gate:** 🟢 Online (5-18% efectividad)\n"
-        status_text += f"🔴 **PayPal Gate:** 🟢 Online (6-20% efectividad)\n"
-        status_text += f"🟡 **Ayden Gate:** 🟢 Online (3-15% efectividad)\n"
-        status_text += f"🟢 **Auth Gate:** 🟢 Online (4-16% efectividad)\n"
-        status_text += f"⚫ **CCN Charge:** 🟢 Online (7-22% efectividad)\n\n"
+        status_text += f"🔵 **Stripe Gate:** 🟢 Online\n"
+        status_text += f"🟠 **Amazon Gate:** 🟢 Online\n"
+        status_text += f"🔴 **PayPal Gate:** 🟢 Online\n"
+        status_text += f"🟡 **Ayden Gate:** 🟢 Online\n"
+        status_text += f"🟢 **Auth Gate:** 🟢 Online\n"
+        status_text += f"⚫ **CCN Charge:** 🟢 Online\n\n"
         status_text += f"⏰ **Última actualización:** {datetime.now().strftime('%H:%M:%S')}\n"
         status_text += f"🔄 **Uptime:** 99.9%\n"
-        status_text += f"⚠️ **Efectividad REALISTA para usuarios de pago**"
+        status_text += f"⚠️ **Efectividad PRO**"
 
         back_keyboard = [[InlineKeyboardButton("🔙 Volver", callback_data='gates_back')]]
         await query.edit_message_text(
@@ -535,7 +535,7 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         response += f"🎯 **Acceso:** {user_type}\n"
         response += f"💰 **Créditos:** {user_data['credits']}\n"
         response += f"💳 **Costo por gate:** 5 créditos\n"
-        response += f"⚡ **Efectividad:** 8-25% (Realista)\n\n"
+        response += f"⚡ **Efectividad:** PRO\n\n"
         response += f"💡 **Selecciona el gate que deseas usar:**"
 
         await query.edit_message_text(
@@ -560,13 +560,12 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         if not gate_system.is_authorized(user_id):
             await query.edit_message_text(
                 "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
-                "💎 **¡Necesitas ser Premium, Fundador o Co-Fundador para usar los Gates!**\n\n"
+                "💎 **¡Necesitas ser Premium!**\n\n"
                 "🔐 **Para obtener acceso premium:**\n"
                 "• 💳 Contacta a @SteveCHBll\n"
-                "• 🔑 Usa `/apply_key [código]` si tienes una clave\n\n"
                 "⚡ **Beneficios Premium:**\n"
                 "• ✅ Acceso completo a todos los gates\n"
-                "• ✅ Efectividad realista (8-25%)\n"
+                "• ✅ Efectividad PRO\n"
                 "• ✅ Procesamiento de múltiples tarjetas\n"
                 "• ✅ Soporte prioritario\n"
                 "• ✅ Control anti-rate limit\n\n"
@@ -595,7 +594,7 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         response += f"`4532123456781234|12|25|123`\n\n"
         response += f"🔄 **El gate procesará automáticamente**\n"
         response += f"⏱️ **Tiempo estimado:** 2-5 segundos\n"
-        response += f"⚠️ **Efectividad REALISTA garantizada**\n\n"
+        response += f"⚠️ **Efectividad PRO**\n\n"
         response += f"💡 **Tip:** Usa tarjetas con BIN conocido"
 
         back_keyboard = [[InlineKeyboardButton("🔙 Volver al menú", callback_data='gates_back')]]
@@ -615,10 +614,10 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not gate_system.is_authorized(user_id):
         await update.message.reply_text(
             "🚫 **PROCESAMIENTO BLOQUEADO** 🚫\n\n"
-            "💎 **Solo usuarios Premium, Fundadores y Co-Fundadores pueden procesar tarjetas**\n\n"
+            "💎 **Solo usuarios Premium**\n\n"
             "🔥 **¿Por qué ser Premium?**\n"
             "• 💳 Acceso real a gates de pago\n"
-            "• 🎯 Efectividad comprobada (8-25%)\n"
+            "• 🎯 Efectividad comprobada\n"
             "• 💰 Recupera la inversión con pocas tarjetas LIVE\n"
             "• ⚡ Control anti-rate limit avanzado\n\n"
             "📞 **Contacta a @SteveCHBll para ser Premium**",
