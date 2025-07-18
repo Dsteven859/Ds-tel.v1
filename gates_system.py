@@ -11,10 +11,6 @@ from telegram.error import RetryAfter, TimedOut
 
 # Importar db del módulo principal
 from telegram_bot import db
-try:
-    from telegram_bot import ADMIN_IDS
-except ImportError:
-    ADMIN_IDS = []
 
 class GateSystem:
     def __init__(self, db):
@@ -24,23 +20,16 @@ class GateSystem:
 
     def is_authorized(self, user_id: str) -> bool:
         """Verificar si el usuario tiene acceso (fundador nivel 1, co-fundador, moderador o premium)"""
-        # Verificar si es admin del bot (siempre autorizado)
-        try:
-            user_id_int = int(user_id)
-            # Importar ADMIN_IDS desde el módulo principal
-            from telegram_bot import ADMIN_IDS
-            if user_id_int in ADMIN_IDS:
-                return True
-        except (ValueError, ImportError):
-            pass
-        
-        # Verificar si es fundador nivel 1
+        # Verificar si es fundador nivel 1 usando la función específica
         if self.db.is_founder(user_id):
             return True
 
-        # Verificar roles de staff (co-fundador nivel 2 y moderador nivel 3)
-        staff_data = self.db.get_staff_role(user_id)
-        if staff_data and staff_data['role'] in ['1', '2', '3']:  # Fundador, Co-fundador o moderador
+        # Verificar si es co-fundador nivel 2 usando la función específica
+        if self.db.is_cofounder(user_id):
+            return True
+
+        # Verificar si es moderador nivel 3 usando la función específica
+        if self.db.is_moderator(user_id):
             return True
 
         # Verificar si es premium activo
@@ -48,12 +37,9 @@ class GateSystem:
         if user_data.get('premium', False):
             premium_until = user_data.get('premium_until')
             if premium_until:
-                try:
-                    premium_date = datetime.fromisoformat(premium_until)
-                    if datetime.now() < premium_date:
-                        return True
-                except ValueError:
-                    pass
+                premium_date = datetime.fromisoformat(premium_until)
+                if datetime.now() < premium_date:
+                    return True
         return False
 
     def create_gates_menu(self) -> InlineKeyboardMarkup:
@@ -426,14 +412,9 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = str(update.effective_user.id)
 
-    # Verificar autorización primero
-    is_authorized = gate_system.is_authorized(user_id)
-    
-    # Verificar créditos (5 créditos por uso) - Solo si no es admin
+    # Verificar créditos (5 créditos por uso)
     user_data = db.get_user(user_id)
-    is_admin = update.effective_user.id in ADMIN_IDS if 'ADMIN_IDS' in globals() else False
-    
-    if not is_admin and user_data['credits'] < 5:
+    if user_data['credits'] < 5:
         await update.message.reply_text(
             "❌ **CRÉDITOS INSUFICIENTES** ❌\n\n"
             f"💰 **Necesitas:** 5 créditos\n"
@@ -451,9 +432,9 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Determinar tipo de usuario y acceso
     is_founder = db.is_founder(user_id)
-    staff_data = db.get_staff_role(user_id)
-    is_cofounder = staff_data and staff_data['role'] == '2'
-    is_moderator = staff_data and staff_data['role'] == '3'
+    is_cofounder = db.is_cofounder(user_id)
+    is_moderator = db.is_moderator(user_id)
+    is_authorized = gate_system.is_authorized(user_id)
 
     if is_authorized:
         if is_founder:
@@ -545,8 +526,7 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         keyboard = gate_system.create_gates_menu()
         user_data = db.get_user(user_id)
         is_founder = db.is_founder(user_id)
-        staff_data = db.get_staff_role(user_id)
-        is_cofounder = staff_data and staff_data['role'] == '2'
+        is_cofounder = db.is_cofounder(user_id)
 
         if is_founder:
             user_type = "👑 FUNDADOR"
@@ -582,16 +562,7 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if query.data in gate_types:
         # VERIFICAR PERMISOS AL SELECCIONAR GATE
-        is_authorized = gate_system.is_authorized(user_id)
-        
-        # Debug: Verificar roles específicos
-        is_founder = db.is_founder(user_id)
-        staff_data = db.get_staff_role(user_id)
-        user_data = db.get_user(user_id)
-        is_premium = user_data.get('premium', False)
-        
-        if not is_authorized:
-            debug_info = f"Debug: Fundador={is_founder}, Staff={staff_data}, Premium={is_premium}"
+        if not gate_system.is_authorized(user_id):
             await query.edit_message_text(
                 "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
                 "💎 **¡Necesitas permisos especiales!**\n\n"
@@ -606,7 +577,6 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 "• ✅ Procesamiento de múltiples tarjetas\n"
                 "• ✅ Soporte prioritario\n"
                 "• ✅ Control anti-rate limit\n\n"
-                f"🔍 {debug_info}\n\n"
                 "🎯 **Contacta a @SteveCHBll para más información**",
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -671,8 +641,7 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Verificar límites según nivel de usuario
     is_founder = db.is_founder(user_id)
-    staff_data = db.get_staff_role(user_id)
-    is_cofounder = staff_data and staff_data['role'] == '2'
+    is_cofounder = db.is_cofounder(user_id)
     user_data = db.get_user(user_id)
     is_premium = user_data.get('premium', False)
 
