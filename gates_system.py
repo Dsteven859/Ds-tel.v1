@@ -9,8 +9,8 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from telegram.error import RetryAfter, TimedOut
 
-# Importar db del módulo principal
-from telegram_bot import db
+# Importar db y ADMIN_IDS del módulo principal
+from telegram_bot import db, ADMIN_IDS
 
 class GateSystem:
     def __init__(self, db):
@@ -19,14 +19,20 @@ class GateSystem:
         self.rate_limit_tracker = {}  # Control de rate limiting
 
     def is_authorized(self, user_id: str) -> bool:
-        """Verificar si el usuario tiene acceso (fundador nivel 1, co-fundador, moderador o premium)"""
+        """Verificar si el usuario tiene acceso (admin, fundador, co-fundador, moderador o premium)"""
+        user_id_int = int(user_id)
+        
+        # Verificar si es admin del bot (ADMIN_IDS)
+        if user_id_int in ADMIN_IDS:
+            return True
+        
         # Verificar si es fundador nivel 1
         if self.db.is_founder(user_id):
             return True
 
         # Verificar roles de staff (co-fundador nivel 2 y moderador nivel 3)
         staff_data = self.db.get_staff_role(user_id)
-        if staff_data and staff_data['role'] in ['2', '3']:  # Co-fundador o moderador
+        if staff_data and staff_data['role'] in ['1', '2', '3']:  # Fundador, Co-fundador o moderador
             return True
 
         # Verificar si es premium activo
@@ -34,9 +40,12 @@ class GateSystem:
         if user_data.get('premium', False):
             premium_until = user_data.get('premium_until')
             if premium_until:
-                premium_date = datetime.fromisoformat(premium_until)
-                if datetime.now() < premium_date:
-                    return True
+                try:
+                    premium_date = datetime.fromisoformat(premium_until)
+                    if datetime.now() < premium_date:
+                        return True
+                except ValueError:
+                    pass
         return False
 
     def create_gates_menu(self) -> InlineKeyboardMarkup:
@@ -669,16 +678,42 @@ class GateSystem:
 gate_system = None
 
 async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando principal /gates - Todos pueden ver, solo premium/fundadores pueden usar"""
+    """Comando principal /gates - Solo fundadores, co-fundadores, moderadores y premium"""
     global gate_system
     if gate_system is None:
         gate_system = GateSystem(db)
 
     user_id = str(update.effective_user.id)
+    user_id_int = update.effective_user.id
 
-    # Verificar créditos (5 créditos por uso)
+    # VERIFICAR PERMISOS PRIMERO - Antes que los créditos
+    is_authorized = gate_system.is_authorized(user_id)
+    
+    if not is_authorized:
+        await update.message.reply_text(
+            "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
+            "💎 **¡Necesitas permisos especiales!**\n\n"
+            "🔐 **Acceso autorizado para:**\n"
+            "• 👑 Fundadores\n"
+            "• 💎 Co-fundadores\n"
+            "• 🛡️ Moderadores\n"
+            "• 💎 Usuarios Premium\n\n"
+            "⚡ **Beneficios del acceso:**\n"
+            "• ✅ Acceso completo a todos los gates\n"
+            "• ✅ Efectividad PRO\n"
+            "• ✅ Procesamiento de múltiples tarjetas\n"
+            "• ✅ Soporte prioritario\n"
+            "• ✅ Control anti-rate limit\n\n"
+            "🎯 **Contacta a @SteveCHBll para más información**",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
+    # Verificar créditos SOLO si está autorizado (5 créditos por uso)
     user_data = db.get_user(user_id)
-    if user_data['credits'] < 5:
+    
+    # Los admins tienen créditos ilimitados
+    if user_id_int not in ADMIN_IDS and user_data['credits'] < 5:
         await update.message.reply_text(
             "❌ **CRÉDITOS INSUFICIENTES** ❌\n\n"
             f"💰 **Necesitas:** 5 créditos\n"
@@ -695,6 +730,7 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = gate_system.create_gates_menu()
 
     # Determinar tipo de usuario y acceso
+    is_admin = user_id_int in ADMIN_IDS
     is_founder = db.is_founder(user_id)
     staff_data = db.get_staff_role(user_id)
     is_cofounder = staff_data and staff_data['role'] == '2'
@@ -702,7 +738,10 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_authorized = gate_system.is_authorized(user_id)
     
     if is_authorized:
-        if is_founder:
+        if is_admin:
+            user_type = "🔥 ADMINISTRADOR"
+            efectividad_text = "ULTRA PRO"
+        elif is_founder:
             user_type = "👑 FUNDADOR"
             efectividad_text = "PRO"
         elif is_cofounder:
@@ -798,14 +837,21 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if query.data == 'gates_back':
         keyboard = gate_system.create_gates_menu()
         user_data = db.get_user(user_id)
+        user_id_int = int(user_id)
+        is_admin = user_id_int in ADMIN_IDS
         is_founder = db.is_founder(user_id)
         staff_data = db.get_staff_role(user_id)
         is_cofounder = staff_data and staff_data['role'] == '2'
+        is_moderator = staff_data and staff_data['role'] == '3'
         
-        if is_founder:
+        if is_admin:
+            user_type = "🔥 ADMINISTRADOR"
+        elif is_founder:
             user_type = "👑 FUNDADOR"
         elif is_cofounder:
             user_type = "💎 CO-FUNDADOR"
+        elif is_moderator:
+            user_type = "🛡️ MODERADOR"
         else:
             user_type = "💎 PREMIUM"
 
@@ -917,19 +963,28 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Verificar límites según nivel de usuario
+    user_id_int = int(user_id)
+    is_admin = user_id_int in ADMIN_IDS
     is_founder = db.is_founder(user_id)
     staff_data = db.get_staff_role(user_id)
     is_cofounder = staff_data and staff_data['role'] == '2'
+    is_moderator = staff_data and staff_data['role'] == '3'
     user_data = db.get_user(user_id)
     is_premium = user_data.get('premium', False)
 
     # Establecer límites
-    if is_founder:
+    if is_admin:
+        max_cards = 20  # Administradores máximo
+        user_type = "🔥 ADMINISTRADOR"
+    elif is_founder:
         max_cards = 15  # Fundadores más tarjetas
         user_type = "👑 FUNDADOR"
     elif is_cofounder:
         max_cards = 13  # Co-fundadores también más
         user_type = "💎 CO-FUNDADOR"
+    elif is_moderator:
+        max_cards = 12  # Moderadores
+        user_type = "🛡️ MODERADOR"
     elif is_premium:
         max_cards = 10   # Premium moderado
         user_type = "💎 PREMIUM"
