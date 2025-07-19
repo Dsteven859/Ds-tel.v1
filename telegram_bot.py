@@ -4304,14 +4304,36 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_user_id = str(update.message.reply_to_message.from_user.id)
         target_user = update.message.reply_to_message.from_user
     elif args:
+        # Validar que el argumento sea un ID numérico válido
+        if not args[0].isdigit() or len(args[0]) < 5:
+            await update.message.reply_text(
+                "❌ **ID INVÁLIDO** ❌\n\n"
+                "💡 **Uso correcto del comando:**\n"
+                "• `/id 123456789` - Ver info de usuario específico\n"
+                "• `/id` (respondiendo a mensaje) - Ver info del usuario\n"
+                "• `/id` (sin argumentos) - Ver tu propia información\n\n"
+                "🔍 **Ejemplo:** `/id 123456789`\n"
+                "📝 **Nota:** El ID debe ser un número de al menos 5 dígitos",
+                parse_mode=ParseMode.MARKDOWN)
+            return
+            
         target_user_id = args[0]
         try:
             # Intentar obtener información del usuario
             chat_member = await context.bot.get_chat_member(
                 update.effective_chat.id, int(target_user_id))
             target_user = chat_member.user
-        except:
-            target_user = None
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ **USUARIO NO ENCONTRADO** ❌\n\n"
+                f"🔍 **ID buscado:** `{target_user_id}`\n"
+                f"💡 **Posibles causas:**\n"
+                f"• El usuario no está en este chat\n"
+                f"• ID incorrecto o inexistente\n"
+                f"• El usuario ha abandonado el grupo\n\n"
+                f"📋 **Ejemplo de ID válido:** `123456789`",
+                parse_mode=ParseMode.MARKDOWN)
+            return
     else:
         # Si no hay argumentos ni respuesta, mostrar información del usuario que ejecuta el comando
         target_user_id = str(update.effective_user.id)
@@ -4345,12 +4367,16 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     warns = user_data.get('warns', 0)
     risk_emoji = "🔴" if warns >= 2 else "🟡" if warns >= 1 else "🟢"
 
+    # Escapar caracteres especiales para evitar errores de parsing
+    safe_full_name = escape_markdown(full_name)
+    safe_username = escape_markdown(username)
+    
     response = f"╭─────────────────────────────╮\n"
     response += f"│    🔍 **INFORMACIÓN DE USUARIO**   │\n"
     response += f"╰─────────────────────────────╯\n\n"
-    response += f"👤 **Nombre/Username:** {full_name}\n"
+    response += f"👤 **Nombre/Username:** {safe_full_name}\n"
     response += f"🆔 **ID:** `{target_user_id}`\n"
-    response += f"📱 **Username:** {username}\n"
+    response += f"📱 **Username:** {safe_username}\n"
     response += f"📅 **En el servidor:** {days_in_server} días\n\n"
     response += f"💰 **Créditos:** {user_data['credits']:,}\n"
     response += f"🏭 **Tarjetas generadas:** {user_data['total_generated']:,}\n"
@@ -4989,7 +5015,7 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔓 **DESBANEAR USUARIO** 🔓\n\n"
             "**Uso:** `/unban [user_id]`\n"
             "**Ejemplo:** `/unban 123456789`\n\n"
-            "⚠️ Solo administradores pueden usar este comando",
+            "⚠️ Solo moderadores, co-fundadores y fundadores pueden usar este comando",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -5100,7 +5126,7 @@ async def open_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 )  # Moderador o superior (incluye fundadores, co-fundadores y moderadores)
 async def housemode_command(update: Update,
                             context: ContextTypes.DEFAULT_TYPE):
-    """Modo casa de seguridad - Solo admins"""
+    """Modo casa de seguridad - Moderadores, co-fundadores y fundadores"""
     chat_id = str(update.effective_chat.id)
     args = context.args
 
@@ -5499,9 +5525,9 @@ def format_smart_publication(organized_data, author_name):
 
 
 @staff_only(
-    2)  # Co-fundador o superior (Fundador nivel 1, Co-fundador nivel 2)
+    3)  # Moderador o superior (incluye fundadores, co-fundadores y moderadores)
 async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /post con IA para organizar contenido - Solo fundadores y co-fundadores"""
+    """Comando /post con IA para organizar contenido - Moderadores, co-fundadores y fundadores"""
     user_id = str(update.effective_user.id)
     staff_data = db.get_staff_role(user_id)
 
@@ -5680,10 +5706,10 @@ async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-@admin_only
+@staff_only(3)  # Moderador o superior
 async def establishedadministration_command(
         update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Configurar canal para logs de acciones administrativas - Corregido"""
+    """Configurar canal para logs de acciones administrativas - Moderadores, co-fundadores y fundadores"""
     try:
         args = context.args
         group_id = str(update.effective_chat.id)
@@ -5845,10 +5871,10 @@ async def establishedadministration_command(
             parse_mode=ParseMode.MARKDOWN)
 
 
-@bot_admin_only
+@staff_only(3)  # Moderador o superior
 async def setcheckchats_command(update: Update,
                                 context: ContextTypes.DEFAULT_TYPE):
-    """Configurar chats para el sistema /check - Solo admins"""
+    """Configurar chats para el sistema /check - Moderadores, co-fundadores y fundadores"""
     args = context.args
     group_id = str(update.effective_chat.id)
 
