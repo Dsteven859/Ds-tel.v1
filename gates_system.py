@@ -37,15 +37,16 @@ class GateSystem:
                 logger.info(f"Usuario {user_id} autorizado como MODERADOR")
                 return True
 
-            # Verificar si es premium activo - CORREGIDO PARA SETPREMIUM
+            # Verificar si es premium activo - SIMPLIFICADO Y CORREGIDO
             user_data = self.db.get_user(user_id)
             is_premium = user_data.get('premium', False)
             premium_until = user_data.get('premium_until')
 
             logger.info(f"Verificando premium para {user_id}: premium={is_premium}, until={premium_until}")
 
+            # Si premium=True, autorizar directamente
             if is_premium:
-                # Si tiene premium_until, verificar si no ha expirado
+                # Solo verificar fecha si existe premium_until
                 if premium_until:
                     try:
                         # Asegurar compatibilidad con diferentes formatos de fecha
@@ -54,8 +55,9 @@ class GateSystem:
                         else:
                             premium_until_date = premium_until
                         
+                        # Verificar si aún es válido
                         if datetime.now() < premium_until_date:
-                            logger.info(f"Usuario {user_id} tiene premium válido hasta {premium_until_date} - Acceso autorizado para GATES")
+                            logger.info(f"Usuario {user_id} tiene premium válido hasta {premium_until_date} - ACCESO AUTORIZADO")
                             return True
                         else:
                             # Premium expirado - actualizar en base de datos
@@ -65,15 +67,15 @@ class GateSystem:
                     except Exception as date_error:
                         logger.error(f"Error parsing fecha premium para {user_id}: {date_error}")
                         # Si hay error con la fecha pero tiene premium=True, autorizar
-                        logger.info(f"Autorizando usuario {user_id} por tener premium=True a pesar del error de fecha")
+                        logger.info(f"Usuario {user_id} autorizado por premium=True (error de fecha ignorado)")
                         return True
                 else:
-                    # Premium sin fecha de expiración (permanente) o setpremium sin fecha
-                    logger.info(f"Usuario {user_id} tiene premium sin fecha de expiración - Acceso autorizado para GATES")
+                    # Premium=True sin fecha de expiración - AUTORIZAR SIEMPRE
+                    logger.info(f"Usuario {user_id} tiene premium permanente - ACCESO AUTORIZADO")
                     return True
 
             # No es premium ni staff
-            logger.debug(f"Usuario {user_id} sin acceso premium/staff a gates")
+            logger.info(f"Usuario {user_id} NO autorizado - premium={is_premium}, staff=False")
             return False
 
         except Exception as e:
