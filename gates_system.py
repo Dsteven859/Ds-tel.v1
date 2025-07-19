@@ -35,77 +35,15 @@ class GateSystem:
             if self.db.is_moderator(user_id):
                 return True
 
-            # Verificar si es premium activo - VERSIÓN ULTRA CORREGIDA
+            # Verificar si es premium activo - VERSIÓN SIMPLIFICADA Y CORREGIDA
             user_data = self.db.get_user(user_id)
             
-            # Si el flag premium está activo, SIEMPRE dar acceso (máxima prioridad)
+            # Si el flag premium está activo, SIEMPRE dar acceso
             if user_data.get('premium', False):
-                # Log para debugging
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.info(f"Usuario {user_id} tiene flag premium activo - Acceso garantizado")
-                
-                premium_until = user_data.get('premium_until')
-                
-                # Si no hay fecha de vencimiento, acceso ilimitado
-                if not premium_until:
-                    logger.info(f"Usuario {user_id} premium sin fecha de vencimiento - Acceso ilimitado")
-                    return True
-                
-                try:
-                    # Intentar parsear la fecha con múltiples formatos
-                    from datetime import datetime
-                    
-                    if isinstance(premium_until, str):
-                        # Intentar múltiples formatos de fecha
-                        for date_format in [
-                            '%Y-%m-%d %H:%M:%S.%f',  # Formato con microsegundos
-                            '%Y-%m-%d %H:%M:%S',     # Formato sin microsegundos
-                            '%Y-%m-%dT%H:%M:%S.%f',  # Formato ISO con T
-                            '%Y-%m-%dT%H:%M:%S',     # Formato ISO sin microsegundos
-                        ]:
-                            try:
-                                premium_date = datetime.strptime(premium_until, date_format)
-                                break
-                            except ValueError:
-                                continue
-                        else:
-                            # Si todos los formatos fallan, intentar ISO format
-                            try:
-                                premium_date = datetime.fromisoformat(premium_until.replace('T', ' '))
-                            except ValueError:
-                                # Si aún falla, dar acceso por defecto (usuario premium marcado)
-                                logger.warning(f"No se pudo parsear fecha premium para {user_id}: {premium_until}")
-                                logger.info(f"Dando acceso por defecto - Usuario marcado como premium")
-                                return True
-                    else:
-                        premium_date = premium_until
-                    
-                    # Verificar si el premium sigue activo
-                    current_time = datetime.now()
-                    if current_time <= premium_date:
-                        logger.info(f"Usuario {user_id} premium válido hasta {premium_date}")
-                        return True
-                    else:
-                        # Premium técnicamente expirado
-                        days_expired = (current_time - premium_date).days
-                        
-                        # Dar período de gracia de 7 días (en lugar de 1)
-                        if days_expired <= 7:
-                            logger.info(f"Usuario {user_id} en período de gracia premium ({days_expired} días expirado)")
-                            return True
-                        else:
-                            # Expirado hace más de 7 días - actualizar BD
-                            logger.info(f"Usuario {user_id} premium expirado hace {days_expired} días - Removiendo premium")
-                            self.db.update_user(user_id, {'premium': False, 'premium_until': None})
-                            return False
-                            
-                except Exception as e:
-                    # Si hay cualquier error en el procesamiento de fechas,
-                    # SIEMPRE dar acceso si el flag premium está activo
-                    logger.warning(f"Error procesando fecha premium para {user_id}: {e}")
-                    logger.info(f"Dando acceso por flag premium activo como fallback")
-                    return True
+                logger.info(f"Usuario {user_id} tiene premium activo - Acceso autorizado")
+                return True
             
             # No es premium ni staff
             return False
@@ -756,57 +694,10 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_moderator = db.is_moderator(user_id)
     is_authorized = gate_system.is_authorized(user_id)
 
-    # Verificar premium usando la misma lógica que is_authorized - ULTRA CORREGIDO
+    # Verificar premium - SIMPLIFICADO
     user_data = db.get_user(user_id)
     is_premium = user_data.get('premium', False)
-    premium_valid = False
-    
-    if is_premium:
-        # Si el flag premium está activo, siempre considerar válido inicialmente
-        premium_valid = True
-        
-        premium_until = user_data.get('premium_until')
-        if premium_until:
-            try:
-                # Usar la misma lógica de parseo que en is_authorized
-                if isinstance(premium_until, str):
-                    for date_format in [
-                        '%Y-%m-%d %H:%M:%S.%f',  # Formato con microsegundos
-                        '%Y-%m-%d %H:%M:%S',     # Formato sin microsegundos
-                        '%Y-%m-%dT%H:%M:%S.%f',  # Formato ISO con T
-                        '%Y-%m-%dT%H:%M:%S',     # Formato ISO sin microsegundos
-                    ]:
-                        try:
-                            premium_date = datetime.strptime(premium_until, date_format)
-                            break
-                        except ValueError:
-                            continue
-                    else:
-                        # Intentar ISO format como último recurso
-                        try:
-                            premium_date = datetime.fromisoformat(premium_until.replace('T', ' '))
-                        except ValueError:
-                            # Si falla todo, mantener premium_valid = True por flag activo
-                            premium_date = None
-                else:
-                    premium_date = premium_until
-                
-                # Solo verificar fecha si se pudo parsear
-                if premium_date:
-                    current_time = datetime.now()
-                    if current_time > premium_date:
-                        # Premium expirado - dar gracia de 7 días
-                        days_expired = (current_time - premium_date).days
-                        premium_valid = days_expired <= 7
-                    # Si no ha expirado, premium_valid ya es True
-                        
-            except Exception as e:
-                # Si hay cualquier error, mantener valid por flag premium activo
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Error verificando premium para gates UI {user_id}: {e}")
-                premium_valid = True
-        # Si no hay fecha pero flag premium activo, premium_valid ya es True
+    premium_valid = is_premium  # Si tiene flag premium, es válido
 
     # Determinar tipo de usuario y acceso basado en roles de staff y premium
     if is_founder:
@@ -945,26 +836,12 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     }
 
     if query.data in gate_types:
-        # VERIFICAR PERMISOS AL SELECCIONAR GATE - Usando función is_authorized mejorada
+        # VERIFICAR PERMISOS AL SELECCIONAR GATE
         is_authorized = gate_system.is_authorized(user_id)
         
         if not is_authorized:
-            # Obtener información actualizada del usuario para debug
             user_data = db.get_user(user_id)
-            premium_status = "❌ No Premium"
-            
-            # VERIFICACIÓN ADICIONAL DE EMERGENCIA para casos edge
-            if user_data.get('premium', False):
-                premium_status = "✅ Premium activo"
-                # Si el usuario tiene flag premium pero is_authorized falló,
-                # hacer una verificación de emergencia y dar acceso
-                is_authorized = True
-                
-                # Log para debugging
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Verificación de emergencia activada para usuario premium {user_id}")
-                logger.info(f"Usuario con flag premium obtuvo acceso via verificación de emergencia")
+            premium_status = "✅ Premium activo" if user_data.get('premium', False) else "❌ No Premium"
             
             await query.edit_message_text(
                 "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
