@@ -1,4 +1,3 @@
-
 import asyncio
 from typing import Dict, Set
 
@@ -1005,6 +1004,12 @@ class Database:
                 'warns': 0  # Added for anti-spam
             }
             self.save_data()
+            logger.info(f"Nuevo usuario creado: {user_id} con premium: False")
+        else:
+            # Log para depuración
+            user_data = self.users[user_id]
+            logger.info(f"Usuario {user_id} cargado - premium: {user_data.get('premium', False)}, until: {user_data.get('premium_until', 'None')}")
+        
         return self.users[user_id]
 
     def update_user(self, user_id: str, data: dict):
