@@ -3622,116 +3622,131 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /check para verificar capturas - Solo funciona respondiendo a imágenes"""
-    user_id = str(update.effective_user.id)
-    user_data = db.get_user(user_id)
-    group_id = str(update.effective_chat.id)
-
-    # Verificar que el comando se use respondiendo a una imagen
-    if not update.message.reply_to_message or not update.message.reply_to_message.photo:
-        await update.message.reply_text(
-            "╔══════════════════════════════════╗\n"
-            "║   📸  **VERIFICADOR DE CAPTURAS**  📸   ║\n"
-            "╚══════════════════════════════════╝\n\n"
-            "🚫 **ERROR:** Debes responder a una imagen\n\n"
-            "📋 **INSTRUCCIONES:**\n"
-            "┌─────────────────────────────────┐\n"
-            "│ 1️⃣ Envía tu captura al grupo     │\n"
-            "│ 2️⃣ Responde a esa imagen con /check │\n"
-            "│ 3️⃣ Espera la verificación oficial   │\n"
-            "└─────────────────────────────────┘\n\n"
-            "🎁 **¡Obtén recompensas por capturas válidas!**\n"
-            "⚡ **Verificación rápida en menos de 24h**\n\n"
-            "💡 **TIP:** Solo capturas auténticas serán aprobadas",
-            parse_mode=ParseMode.MARKDOWN)
-        return
-
-    # Verificar que el grupo tenga configurado el sistema
-    check_config = db.get_check_chats(group_id)
-    if not check_config:
-        await update.message.reply_text(
-            "╔══════════════════════════════════╗\n"
-            "║      ⚙️  **SISTEMA NO CONFIGURADO**  ⚙️      ║\n"
-            "╚══════════════════════════════════╝\n\n"
-            "❌ **El sistema de verificación no está activo**\n\n"
-            "🔧 **Para administradores:**\n"
-            "• Usar comando `/setcheckchats`\n"
-            "• Configurar chat de verificación\n"
-            "• Configurar canal de publicación\n\n"
-            "📞 **Contacta a la administración para activar**",
-            parse_mode=ParseMode.MARKDOWN)
-        return
-
-    # Generar ID único para esta verificación
-    import uuid
-    check_id = str(uuid.uuid4())[:8]
-
-    # Obtener información de la imagen
-    photo = update.message.reply_to_message.photo[
-        -1]  # La imagen de mayor calidad
-    image_file_id = photo.file_id
-
-    # Guardar verificación pendiente
-    username = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
-    db.add_pending_check(check_id, user_id, username, image_file_id, group_id)
-
-    # Enviar confirmación al usuario con diseño mejorado
-    await update.message.reply_text(
-        "╔══════════════════════════════════╗\n"
-        "║    🎯  **CAPTURA EN VERIFICACIÓN**  🎯    ║\n"
-        "╚══════════════════════════════════╝\n\n"
-        "✨ **¡Tu captura ha sido enviada exitosamente!**\n\n"
-        "┌─────────── 📊 **DETALLES** ───────────┐\n"
-        f"│ 🆔 **ID:** `{check_id}`\n"
-        f"│ 👤 **Usuario:** {username}\n"
-        f"│ 📸 **Estado:** Imagen procesada ✅\n"
-        f"│ ⏳ **Revisión:** En proceso...\n"
-        "└──────────────────────────────────────┘\n\n"
-        f"📅 **Enviado:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
-        "⏰ **Tiempo máximo:** 24 horas\n\n"
-        "🌟 **¡Mantente atento a las actualizaciones!**",
-        parse_mode=ParseMode.MARKDOWN)
-
-    # Enviar imagen al chat de verificación para administradores
     try:
-        verification_chat_id = check_config['verification_chat']
+        user_id = str(update.effective_user.id)
+        user_data = db.get_user(user_id)
+        group_id = str(update.effective_chat.id)
 
-        # Crear botones para aprobar/rechazar
-        keyboard = [[
-            InlineKeyboardButton("✅ APROBAR",
-                                 callback_data=f'approve_check_{check_id}'),
-            InlineKeyboardButton("❌ RECHAZAR",
-                                 callback_data=f'reject_check_{check_id}')
-        ]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Verificar que el comando se use respondiendo a una imagen
+        if not update.message.reply_to_message or not update.message.reply_to_message.photo:
+            await update.message.reply_text(
+                "📸 *VERIFICADOR DE CAPTURAS* 📸\n\n"
+                "🚫 *ERROR:* Debes responder a una imagen\n\n"
+                "📋 *INSTRUCCIONES:*\n"
+                "1️⃣ Envía tu captura al grupo\n"
+                "2️⃣ Responde a esa imagen con /check\n"
+                "3️⃣ Espera la verificación oficial\n\n"
+                "🎁 ¡Obtén recompensas por capturas válidas!\n"
+                "⚡ Verificación rápida en menos de 24h\n\n"
+                "💡 *TIP:* Solo capturas auténticas serán aprobadas",
+                parse_mode=ParseMode.MARKDOWN)
+            return
 
-        # Enviar imagen con información al chat de verificación
-        caption = f"🔍 **NUEVA VERIFICACIÓN PENDIENTE** 🔍\n\n"
-        caption += f"🆔 **ID:** `{check_id}`\n"
-        caption += f"👤 **Usuario:** {username} (`{user_id}`)\n"
-        caption += f"📊 **Créditos actuales:** {user_data['credits']}\n"
-        caption += f"🏠 **Grupo:** `{group_id}`\n"
-        caption += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-        caption += f"💰 **Recompensa:** 6 créditos si se aprueba\n"
-        caption += f"📝 **Acción requerida:** Aprobar o rechazar captura"
+        # Verificar que el grupo tenga configurado el sistema
+        check_config = db.get_check_chats(group_id)
+        if not check_config:
+            await update.message.reply_text(
+                "⚙️ *SISTEMA NO CONFIGURADO* ⚙️\n\n"
+                "❌ El sistema de verificación no está activo\n\n"
+                "🔧 *Para administradores:*\n"
+                "• Usar comando `/setcheckchats`\n"
+                "• Configurar chat de verificación\n"
+                "• Configurar canal de publicación\n\n"
+                "📞 Contacta a la administración para activar",
+                parse_mode=ParseMode.MARKDOWN)
+            return
 
-        await context.bot.send_photo(chat_id=verification_chat_id,
-                                     photo=image_file_id,
-                                     caption=caption,
-                                     parse_mode=ParseMode.MARKDOWN,
-                                     reply_markup=reply_markup)
+        # Generar ID único para esta verificación
+        import uuid
+        check_id = str(uuid.uuid4())[:8]
+
+        # Obtener información de la imagen
+        photo = update.message.reply_to_message.photo[-1]  # La imagen de mayor calidad
+        image_file_id = photo.file_id
+
+        # Guardar verificación pendiente
+        username = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.first_name
+        db.add_pending_check(check_id, user_id, username, image_file_id, group_id)
+
+        # Escapar caracteres especiales para el username
+        safe_username = username.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]')
+        
+        # Enviar confirmación al usuario
+        confirmation_text = (
+            "🎯 *CAPTURA EN VERIFICACIÓN* 🎯\n\n"
+            "✨ ¡Tu captura ha sido enviada exitosamente!\n\n"
+            f"🆔 *ID:* `{check_id}`\n"
+            f"👤 *Usuario:* {safe_username}\n"
+            f"📸 *Estado:* Imagen procesada ✅\n"
+            f"⏳ *Revisión:* En proceso\\.\\.\\.\n\n"
+            f"📅 *Enviado:* {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+            "⏰ *Tiempo máximo:* 24 horas\n\n"
+            "🌟 ¡Mantente atento a las actualizaciones!"
+        )
+        
+        await update.message.reply_text(confirmation_text, parse_mode=ParseMode.MARKDOWN)
+
+        # Enviar imagen al chat de verificación para administradores
+        try:
+            verification_chat_id = check_config['verification_chat']
+
+            # Crear botones para aprobar/rechazar
+            keyboard = [[
+                InlineKeyboardButton("✅ APROBAR",
+                                     callback_data=f'approve_check_{check_id}'),
+                InlineKeyboardButton("❌ RECHAZAR",
+                                     callback_data=f'reject_check_{check_id}')
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # Enviar imagen con información al chat de verificación
+            caption = (
+                f"🔍 *NUEVA VERIFICACIÓN PENDIENTE* 🔍\n\n"
+                f"🆔 *ID:* `{check_id}`\n"
+                f"👤 *Usuario:* {safe_username} \\(`{user_id}`\\)\n"
+                f"📊 *Créditos actuales:* {user_data['credits']}\n"
+                f"🏠 *Grupo:* `{group_id}`\n"
+                f"📅 *Fecha:* {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+                f"💰 *Recompensa:* 6 créditos si se aprueba\n"
+                f"📝 *Acción requerida:* Aprobar o rechazar captura"
+            )
+
+            await context.bot.send_photo(
+                chat_id=verification_chat_id,
+                photo=image_file_id,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+
+        except Exception as e:
+            logger.error(f"Error enviando a chat de verificación: {e}")
+            await update.message.reply_text(
+                "❌ *ERROR DEL SISTEMA* ❌\n\n"
+                "🔧 No se pudo procesar la verificación\n\n"
+                "💡 *Posibles causas:*\n"
+                "• Configuración incompleta del sistema\n"
+                "• Problemas temporales de conectividad\n"
+                "• Mantenimiento en curso\n\n"
+                "📞 Contacta a los administradores para asistencia",
+                parse_mode=ParseMode.MARKDOWN)
 
     except Exception as e:
-        logger.error(f"Error enviando a chat de verificación: {e}")
-        await update.message.reply_text(
-            "╔══════════════════════════════════╗\n"
-            "║        ❌  **ERROR DEL SISTEMA**  ❌        ║\n"
-            "╚══════════════════════════════════╝\n\n"
-            "🔧 **No se pudo procesar la verificación**\n\n"
-            "💡 **Posibles causas:**\n"
-            "• Configuración incompleta del sistema\n"
-            "• Problemas temporales de conectividad\n"
-            "• Mantenimiento en curso\n\n"
-            "📞 **Contacta a los administradores para asistencia**")
+        logger.error(f"Error crítico en comando /check: {e}")
+        try:
+            await update.message.reply_text(
+                "❌ *ERROR CRÍTICO*\n\n"
+                "Ha ocurrido un error inesperado\\.\n"
+                "Por favor intenta nuevamente\\.\n\n"
+                "Si el problema persiste, contacta a los administradores\\.",
+                parse_mode=ParseMode.MARKDOWN)
+        except:
+            # Fallback sin markdown si todo falla
+            await update.message.reply_text(
+                "❌ ERROR CRÍTICO\n\n"
+                "Ha ocurrido un error inesperado.\n"
+                "Por favor intenta nuevamente.\n\n"
+                "Si el problema persiste, contacta a los administradores.")
 
 
 async def juegos_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7568,6 +7583,83 @@ async def handle_check_approval(query, context, is_approved):
         await query.answer("❌ Captura rechazada - Sin recompensa",
                            show_alert=True)
 
+
+async def handle_check_approval(query, context, is_approved):
+    """Manejar aprobación/rechazo de verificaciones"""
+    try:
+        check_id = query.data.split('_')[-1]
+        admin_user = query.from_user
+        
+        # Verificar que el admin tenga permisos
+        if not (admin_user.id in ADMIN_IDS or db.get_staff_role(str(admin_user.id))):
+            await query.answer("❌ No tienes permisos para esta acción", show_alert=True)
+            return
+        
+        # Obtener datos de la verificación
+        check_data = db.get_pending_check(check_id)
+        if not check_data:
+            await query.answer("❌ Verificación no encontrada", show_alert=True)
+            return
+        
+        if check_data['status'] != 'pending':
+            await query.answer("❌ Esta verificación ya fue procesada", show_alert=True)
+            return
+        
+        user_id = check_data['user_id']
+        username = check_data['username']
+        group_id = check_data['group_id']
+        
+        if is_approved:
+            # Aprobar: dar 6 créditos
+            user_data = db.get_user(user_id)
+            new_credits = user_data['credits'] + 6
+            db.update_user(user_id, {'credits': new_credits})
+            db.update_check_status(check_id, 'approved', str(admin_user.id))
+            
+            action_text = "✅ APROBADA"
+            result_text = f"✅ *CAPTURA APROBADA* ✅\n\n" \
+                         f"🎉 ¡Felicidades! Tu captura ha sido aprobada\n" \
+                         f"💰 Has recibido 6 créditos\n" \
+                         f"📊 Créditos totales: {new_credits}\n\n" \
+                         f"🔍 ID de verificación: `{check_id}`"
+        else:
+            # Rechazar
+            db.update_check_status(check_id, 'rejected', str(admin_user.id))
+            
+            action_text = "❌ RECHAZADA"
+            result_text = f"❌ *CAPTURA RECHAZADA* ❌\n\n" \
+                         f"😔 Tu captura no cumple con los requisitos\n" \
+                         f"💡 Verifica que sea una captura auténtica y legible\n\n" \
+                         f"🔍 ID de verificación: `{check_id}`"
+        
+        # Actualizar mensaje del admin
+        admin_text = f"🔍 *VERIFICACIÓN PROCESADA* 🔍\n\n" \
+                    f"🆔 *ID:* `{check_id}`\n" \
+                    f"👤 *Usuario:* {username}\n" \
+                    f"📊 *Resultado:* {action_text}\n" \
+                    f"👮‍♂️ *Procesado por:* {admin_user.first_name}\n" \
+                    f"📅 *Fecha:* {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        
+        await query.edit_message_caption(
+            caption=admin_text,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        # Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=int(user_id),
+                text=result_text,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except:
+            logger.warning(f"No se pudo notificar al usuario {user_id}")
+        
+        await query.answer(f"✅ Verificación {action_text.lower()}")
+        
+    except Exception as e:
+        logger.error(f"Error en handle_check_approval: {e}")
+        await query.answer("❌ Error procesando verificación", show_alert=True)
 
 async def handle_game_play(query, context, game_type):
     """Maneja la lógica de juegos con límite de 12 horas"""
