@@ -37,13 +37,31 @@ class GateSystem:
                 logger.info(f"Usuario {user_id} autorizado como MODERADOR")
                 return True
 
-            # Verificar si es premium activo - VERSIÓN OPTIMIZADA PARA RENDER
+            # Verificar si es premium activo - MEJORADO PARA SETPREMIUM
             user_data = self.db.get_user(user_id)
+            is_premium = user_data.get('premium', False)
+            premium_until = user_data.get('premium_until')
 
-            # Si el flag premium está activo, SIEMPRE dar acceso
-            if user_data.get('premium', False):
-                logger.info(f"Usuario {user_id} tiene premium activo - Acceso autorizado para GATES")
-                return True
+            if is_premium:
+                # Si tiene premium_until, verificar si no ha expirado
+                if premium_until:
+                    try:
+                        premium_until_date = datetime.fromisoformat(premium_until)
+                        if datetime.now() < premium_until_date:
+                            logger.info(f"Usuario {user_id} tiene premium válido hasta {premium_until_date} - Acceso autorizado para GATES")
+                            return True
+                        else:
+                            # Premium expirado - actualizar en base de datos
+                            logger.info(f"Premium de usuario {user_id} expirado - Actualizando base de datos")
+                            self.db.update_user(user_id, {'premium': False, 'premium_until': None})
+                            return False
+                    except Exception as date_error:
+                        logger.error(f"Error parsing fecha premium para {user_id}: {date_error}")
+                        return False
+                else:
+                    # Premium sin fecha de expiración (permanente)
+                    logger.info(f"Usuario {user_id} tiene premium permanente - Acceso autorizado para GATES")
+                    return True
 
             # No es premium ni staff
             logger.debug(f"Usuario {user_id} sin acceso premium/staff a gates")
