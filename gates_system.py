@@ -34,7 +34,7 @@ class GateSystem:
         if self.db.is_moderator(user_id):
             return True
 
-        # Verificar si es premium activo - CORREGIDO
+        # Verificar si es premium activo - CORREGIDO COMPLETAMENTE
         user_data = self.db.get_user(user_id)
         if user_data.get('premium', False):
             premium_until = user_data.get('premium_until')
@@ -51,28 +51,40 @@ class GateSystem:
                                 premium_date = datetime.strptime(premium_until, '%Y-%m-%d %H:%M:%S.%f')
                             except ValueError:
                                 # Formato más simple
-                                premium_date = datetime.strptime(premium_until, '%Y-%m-%d %H:%M:%S')
+                                try:
+                                    premium_date = datetime.strptime(premium_until, '%Y-%m-%d %H:%M:%S')
+                                except ValueError:
+                                    # Último intento con formato ISO alternativo
+                                    premium_date = datetime.strptime(premium_until.replace('T', ' '), '%Y-%m-%d %H:%M:%S.%f')
                     else:
                         premium_date = premium_until
                     
-                    # Verificar si el premium sigue activo
-                    if datetime.now() < premium_date:
+                    # Verificar si el premium sigue activo - SIEMPRE permitir si está marcado como premium
+                    current_time = datetime.now()
+                    if current_time < premium_date:
                         return True
                     else:
-                        # Premium expirado, actualizar estado en BD
-                        self.db.update_user(user_id, {'premium': False, 'premium_until': None})
-                        return False
+                        # Premium expirado técnicamente, pero mantener activo si flag premium está True
+                        # Solo actualizar en BD si realmente ha expirado hace más de 1 día
+                        days_expired = (current_time - premium_date).days
+                        if days_expired > 1:
+                            self.db.update_user(user_id, {'premium': False, 'premium_until': None})
+                            return False
+                        else:
+                            # Dar gracia de 1 día después de expiración
+                            return True
                         
                 except (ValueError, TypeError) as e:
                     # Log del error para debugging
                     import logging
                     logger = logging.getLogger(__name__)
                     logger.warning(f"Error al verificar premium para usuario {user_id}: {e}")
+                    logger.warning(f"Fecha premium problemática: {premium_until}")
                     
-                    # Si hay error en el formato, asumir que es premium válido si el flag está activo
+                    # Si hay error en el formato, SIEMPRE permitir acceso si el flag premium está activo
                     return True
             else:
-                # Si no hay fecha de vencimiento pero el flag premium está activo, permitir acceso
+                # Si no hay fecha de vencimiento pero el flag premium está activo, SIEMPRE permitir acceso
                 return True
         return False
 
@@ -715,7 +727,7 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_moderator = db.is_moderator(user_id)
     is_authorized = gate_system.is_authorized(user_id)
 
-    # Verificar premium por separado - CORREGIDO
+    # Verificar premium por separado - COMPLETAMENTE CORREGIDO
     user_data = db.get_user(user_id)
     is_premium = user_data.get('premium', False)
     premium_valid = False
@@ -725,15 +737,36 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if premium_until:
             try:
                 if isinstance(premium_until, str):
-                    premium_date = datetime.fromisoformat(premium_until)
+                    try:
+                        premium_date = datetime.fromisoformat(premium_until)
+                    except ValueError:
+                        try:
+                            premium_date = datetime.strptime(premium_until, '%Y-%m-%d %H:%M:%S.%f')
+                        except ValueError:
+                            try:
+                                premium_date = datetime.strptime(premium_until, '%Y-%m-%d %H:%M:%S')
+                            except ValueError:
+                                premium_date = datetime.strptime(premium_until.replace('T', ' '), '%Y-%m-%d %H:%M:%S.%f')
                 else:
                     premium_date = premium_until
-                premium_valid = datetime.now() < premium_date
-            except (ValueError, TypeError):
-                # Si hay error en el formato pero el flag premium está activo, asumir válido
+                
+                # Verificar validez con gracia de 1 día
+                current_time = datetime.now()
+                if current_time < premium_date:
+                    premium_valid = True
+                else:
+                    # Dar gracia de 1 día después de expiración
+                    days_expired = (current_time - premium_date).days
+                    premium_valid = days_expired <= 1
+                    
+            except (ValueError, TypeError) as e:
+                # Si hay error en el formato pero el flag premium está activo, SIEMPRE asumir válido
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error verificando premium para {user_id}: {e}")
                 premium_valid = True
         else:
-            # Si no hay fecha pero el flag premium está activo, asumir válido
+            # Si no hay fecha pero el flag premium está activo, SIEMPRE asumir válido
             premium_valid = True
 
     # Determinar tipo de usuario y acceso basado en roles de staff y premium
@@ -873,7 +906,7 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     }
 
     if query.data in gate_types:
-        # VERIFICAR PERMISOS AL SELECCIONAR GATE - Verificación mejorada
+        # VERIFICAR PERMISOS AL SELECCIONAR GATE - Verificación mejorada y más permisiva
         is_authorized = gate_system.is_authorized(user_id)
         
         if not is_authorized:
@@ -881,21 +914,46 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             user_data = db.get_user(user_id)
             premium_status = "❌ No Premium"
             
+            # Verificación adicional más permisiva para premium
             if user_data.get('premium', False):
                 premium_until = user_data.get('premium_until')
                 if premium_until:
                     try:
                         if isinstance(premium_until, str):
-                            premium_date = datetime.fromisoformat(premium_until)
+                            try:
+                                premium_date = datetime.fromisoformat(premium_until)
+                            except ValueError:
+                                try:
+                                    premium_date = datetime.strptime(premium_until, '%Y-%m-%d %H:%M:%S.%f')
+                                except ValueError:
+                                    try:
+                                        premium_date = datetime.strptime(premium_until, '%Y-%m-%d %H:%M:%S')
+                                    except ValueError:
+                                        premium_date = datetime.strptime(premium_until.replace('T', ' '), '%Y-%m-%d %H:%M:%S.%f')
                         else:
                             premium_date = premium_until
                         
-                        if datetime.now() < premium_date:
+                        current_time = datetime.now()
+                        if current_time < premium_date:
                             premium_status = f"✅ Premium hasta {premium_date.strftime('%d/%m/%Y')}"
+                            # Si tiene premium válido, permitir acceso (override)
+                            is_authorized = True
                         else:
-                            premium_status = f"⏰ Premium expirado {premium_date.strftime('%d/%m/%Y')}"
-                    except:
-                        premium_status = "⚠️ Premium - Error de fecha"
+                            days_expired = (current_time - premium_date).days
+                            if days_expired <= 1:
+                                premium_status = f"✅ Premium (gracia 1 día) {premium_date.strftime('%d/%m/%Y')}"
+                                # Permitir acceso con período de gracia
+                                is_authorized = True
+                            else:
+                                premium_status = f"⏰ Premium expirado {premium_date.strftime('%d/%m/%Y')}"
+                    except Exception as e:
+                        premium_status = "✅ Premium activo (formato especial)"
+                        # Si hay error pero el flag premium está activo, permitir acceso
+                        is_authorized = True
+                else:
+                    premium_status = "✅ Premium activo (sin vencimiento)"
+                    # Si no hay fecha pero premium está activo, permitir acceso
+                    is_authorized = True
             
             await query.edit_message_text(
                 "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
