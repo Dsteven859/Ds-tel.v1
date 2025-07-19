@@ -4320,6 +4320,150 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👑 Premium activado para usuario {target_user_id}\n"
         f"📅 Válido por {days} días")
 
+@staff_only(1)  # Solo fundadores (nivel 1)
+async def setpremium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestionar premium de usuarios - Solo fundadores"""
+    user_id = str(update.effective_user.id)
+    args = context.args
+
+    if not args:
+        await update.message.reply_text(
+            "👑 **GESTIÓN DE PREMIUM** 👑\n\n"
+            "**Uso:** `/setpremium [user_id] [acción] [días]`\n\n"
+            "**Acciones disponibles:**\n"
+            "• `on [días]` - Activar premium\n"
+            "• `off` - Desactivar premium\n"
+            "• `check` - Ver estado premium\n\n"
+            "**Ejemplos:**\n"
+            "• `/setpremium 123456789 on 30` - 30 días premium\n"
+            "• `/setpremium 123456789 off` - Quitar premium\n"
+            "• `/setpremium 123456789 check` - Ver estado\n\n"
+            "🔒 **Solo fundadores pueden usar este comando**",
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if len(args) < 2:
+        await update.message.reply_text(
+            "❌ **Parámetros incompletos**\n\n"
+            "**Uso correcto:** `/setpremium [user_id] [acción]`")
+        return
+
+    target_user_id = args[0]
+    action = args[1].lower()
+
+    # Verificar que el usuario existe
+    target_user_data = db.get_user(target_user_id)
+    if not target_user_data:
+        await update.message.reply_text(
+            f"❌ **Usuario no encontrado**\n\n"
+            f"El usuario `{target_user_id}` no está registrado en el bot")
+        return
+
+    if action == "on":
+        # Activar premium
+        days = int(args[2]) if len(args) > 2 and args[2].isdigit() else 30
+        premium_until = datetime.now() + timedelta(days=days)
+
+        db.update_user(target_user_id, {
+            'premium': True,
+            'premium_until': premium_until.isoformat(),
+            'credits': target_user_data['credits'] + 100  # Bonus de activación
+        })
+
+        # Obtener info del usuario si es posible
+        try:
+            chat_member = await context.bot.get_chat_member(update.effective_chat.id, int(target_user_id))
+            target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
+        except:
+            target_username = f"ID: {target_user_id}"
+
+        response = f"👑 **PREMIUM ACTIVADO** 👑\n\n"
+        response += f"👤 **Usuario:** {target_username}\n"
+        response += f"🆔 **ID:** `{target_user_id}`\n"
+        response += f"📅 **Duración:** {days} días\n"
+        response += f"🔓 **Válido hasta:** {premium_until.strftime('%d/%m/%Y')}\n"
+        response += f"💰 **Bonus:** +100 créditos\n"
+        response += f"💎 **Créditos totales:** {target_user_data['credits'] + 100}\n\n"
+        response += f"👑 **Activado por:** {update.effective_user.first_name}\n"
+        response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+
+    elif action == "off":
+        # Desactivar premium
+        if not target_user_data.get('premium', False):
+            await update.message.reply_text(
+                f"❌ **El usuario ya no tiene premium activo**\n\n"
+                f"👤 **Usuario:** `{target_user_id}`\n"
+                f"📊 **Estado actual:** Usuario estándar",
+                parse_mode=ParseMode.MARKDOWN)
+            return
+
+        db.update_user(target_user_id, {
+            'premium': False,
+            'premium_until': None
+        })
+
+        # Obtener info del usuario si es posible
+        try:
+            chat_member = await context.bot.get_chat_member(update.effective_chat.id, int(target_user_id))
+            target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
+        except:
+            target_username = f"ID: {target_user_id}"
+
+        response = f"❌ **PREMIUM DESACTIVADO** ❌\n\n"
+        response += f"👤 **Usuario:** {target_username}\n"
+        response += f"🆔 **ID:** `{target_user_id}`\n"
+        response += f"📊 **Nuevo estado:** Usuario estándar\n"
+        response += f"💰 **Créditos:** {target_user_data['credits']} (sin cambios)\n\n"
+        response += f"👑 **Desactivado por:** {update.effective_user.first_name}\n"
+        response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        response += f"💡 **El usuario perdió todos los beneficios premium**"
+
+    elif action == "check":
+        # Verificar estado premium
+        is_premium = target_user_data.get('premium', False)
+        
+        # Obtener info del usuario si es posible
+        try:
+            chat_member = await context.bot.get_chat_member(update.effective_chat.id, int(target_user_id))
+            target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
+        except:
+            target_username = f"ID: {target_user_id}"
+
+        response = f"📊 **ESTADO PREMIUM** 📊\n\n"
+        response += f"👤 **Usuario:** {target_username}\n"
+        response += f"🆔 **ID:** `{target_user_id}`\n"
+
+        if is_premium:
+            premium_until = datetime.fromisoformat(target_user_data['premium_until'])
+            days_left = (premium_until - datetime.now()).days
+            
+            response += f"👑 **Estado:** PREMIUM ACTIVO ✅\n"
+            response += f"📅 **Días restantes:** {days_left}\n"
+            response += f"🔓 **Vence:** {premium_until.strftime('%d/%m/%Y %H:%M')}\n"
+            response += f"🎁 **Beneficios:** Activos\n"
+        else:
+            response += f"🆓 **Estado:** Usuario estándar\n"
+            response += f"❌ **Premium:** Inactivo\n"
+            response += f"💡 **Para activar:** `/setpremium {target_user_id} on [días]`\n"
+
+        response += f"\n💰 **Créditos:** {target_user_data['credits']}\n"
+        response += f"📅 **Miembro desde:** {target_user_data['join_date'][:10]}\n"
+        response += f"🏭 **Total generado:** {target_user_data['total_generated']}\n"
+        response += f"🔍 **Total verificado:** {target_user_data['total_checked']}"
+
+    else:
+        await update.message.reply_text(
+            f"❌ **Acción inválida:** `{action}`\n\n"
+            f"**Acciones disponibles:**\n"
+            f"• `on` - Activar premium\n"
+            f"• `off` - Desactivar premium\n"
+            f"• `check` - Ver estado premium")
+        return
+
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
+@admin_only
 
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver información detallada de usuario por ID"""
@@ -8134,6 +8278,7 @@ def main():
         application.add_handler(CommandHandler("cofounder", cofounder_command))
         application.add_handler(CommandHandler("moderator", moderator_command))
 
+
         # Comandos de moderación jerárquicos
         application.add_handler(
             CommandHandler("startfoundress", startfoundress_command))
@@ -8170,6 +8315,11 @@ def main():
         application.add_handler(CommandHandler("mutelist", mutelist_command))
         application.add_handler(
             CommandHandler("creditcleaningworld", creditcleaningworld_command))
+        application.add_handler(CommandHandler("premium", premium_command))
+        application.add_handler(CommandHandler("setpremium", setpremium_command))
+
+
+        
 
         # Importar funciones de gates
         from gates_system import gates_command, handle_gate_callback, process_gate_card
