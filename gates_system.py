@@ -27,31 +27,31 @@ class GateSystem:
         try:
             # Verificar roles de staff usando las funciones de la base de datos
             if self.db.is_founder(user_id):
+                logger.info(f"Usuario {user_id} autorizado como FUNDADOR")
                 return True
 
             if self.db.is_cofounder(user_id):
+                logger.info(f"Usuario {user_id} autorizado como CO-FUNDADOR")
                 return True
 
             if self.db.is_moderator(user_id):
+                logger.info(f"Usuario {user_id} autorizado como MODERADOR")
                 return True
 
-            # Verificar si es premium activo - VERSIÓN SIMPLIFICADA Y CORREGIDA
+            # Verificar si es premium activo - VERSIÓN OPTIMIZADA PARA RENDER
             user_data = self.db.get_user(user_id)
             
             # Si el flag premium está activo, SIEMPRE dar acceso
             if user_data.get('premium', False):
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"Usuario {user_id} tiene premium activo - Acceso autorizado")
+                logger.info(f"Usuario {user_id} tiene premium activo - Acceso autorizado para GATES")
                 return True
             
             # No es premium ni staff
+            logger.debug(f"Usuario {user_id} sin acceso premium/staff a gates")
             return False
             
         except Exception as e:
             # Error crítico - log y denegar acceso por seguridad
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Error crítico en is_authorized para {user_id}: {e}")
             return False
 
