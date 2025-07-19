@@ -19,16 +19,14 @@ class GateSystem:
         self.rate_limit_tracker = {}  # Control de rate limiting
 
     def is_authorized(self, user_id: str) -> bool:
-        """Verificar si el usuario tiene acceso (fundador nivel 1, co-fundador, moderador o premium)"""
-        # Verificar si es fundador nivel 1 usando la función específica
+        """Verificar si el usuario tiene acceso (fundador, co-fundador, moderador o premium activo)"""
+        # Verificar roles de staff usando las funciones de la base de datos
         if self.db.is_founder(user_id):
             return True
 
-        # Verificar si es co-fundador nivel 2 usando la función específica
         if self.db.is_cofounder(user_id):
             return True
 
-        # Verificar si es moderador nivel 3 usando la función específica
         if self.db.is_moderator(user_id):
             return True
 
@@ -37,9 +35,13 @@ class GateSystem:
         if user_data.get('premium', False):
             premium_until = user_data.get('premium_until')
             if premium_until:
-                premium_date = datetime.fromisoformat(premium_until)
-                if datetime.now() < premium_date:
-                    return True
+                try:
+                    premium_date = datetime.fromisoformat(premium_until)
+                    if datetime.now() < premium_date:
+                        return True
+                except ValueError:
+                    # Si hay error en el formato de fecha, considerarlo como no premium
+                    pass
         return False
 
     def create_gates_menu(self) -> InlineKeyboardMarkup:
@@ -58,7 +60,14 @@ class GateSystem:
                 InlineKeyboardButton("⚫ CCN Charge", callback_data='gate_ccn')
             ],
             [
-                InlineKeyboardButton("📊 Gate Status", callback_data='gates_status'),
+                InlineKeyboardButton("🤖 CyberSource AI", callback_data='gate_cybersource'),
+                InlineKeyboardButton("🇬🇧 Worldpay UK", callback_data='gate_worldpay')
+            ],
+            [
+                InlineKeyboardButton("🌐 Braintree Pro", callback_data='gate_braintree'),
+                InlineKeyboardButton("📊 Gate Status", callback_data='gates_status')
+            ],
+            [
                 InlineKeyboardButton("❌ Cerrar", callback_data='gates_close')
             ]
         ]
@@ -213,7 +222,7 @@ class GateSystem:
                 'message': "✅ PayPal: Card linked successfully",
                 'status': 'LIVE',
                 'gateway': 'PayPal Express',
-                'amount': '$0.00'
+                'amount': '$0.01'
             }
         else:
             responses = [
@@ -269,7 +278,7 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'LIVE',
                 'gateway': 'Ayden EU',
-                'amount': '$0.00'
+                'amount': '$0.01'
             }
         else:
             responses = [
@@ -307,7 +316,7 @@ class GateSystem:
                 'message': "✅ Auth: Verification successful",
                 'status': 'LIVE',
                 'gateway': 'Auth Check',
-                'amount': '$0.00'
+                'amount': '$0.01'
             }
         else:
             responses = [
@@ -379,6 +388,241 @@ class GateSystem:
                 'amount': '$0.00'
             }
 
+    async def process_cybersource_ai(self, card_data: str) -> dict:
+        """Procesar CyberSource AI Gate - INTELIGENCIA ARTIFICIAL ANTI-FRAUDE"""
+        await asyncio.sleep(random.uniform(3.5, 6.0))  # IA toma más tiempo
+
+        parts = card_data.split('|')
+        if len(parts) < 4:
+            return {
+                'success': False,
+                'message': '❌ Formato inválido',
+                'status': 'DEAD'
+            }
+
+        card_number = parts[0]
+        exp_month = parts[1]
+        exp_year = parts[2]
+        cvv = parts[3]
+
+        # CyberSource AI - ULTRA RESTRICTIVO pero efectivo para premium
+        success_rate = 0.09  # 9% base (optimizado para premium)
+
+        # Análisis de IA simulado - patrones complejos
+        digit_pattern = int(card_number[-2:]) if len(card_number) >= 2 else 0
+        
+        # Algoritmo de IA para detección de patrones
+        if digit_pattern % 17 == 0:  # Patrón matemático específico
+            success_rate += 0.04  # +4%
+        elif digit_pattern % 7 == 0:  # Patrón secundario
+            success_rate += 0.02  # +2%
+
+        # Análisis de CVV con IA
+        cvv_sum = sum(int(d) for d in cvv if d.isdigit())
+        if cvv_sum % 5 == 0:
+            success_rate += 0.02  # +2%
+
+        # Análisis de fecha de vencimiento
+        try:
+            if int(exp_year) >= 2027:
+                success_rate += 0.03  # +3% para tarjetas con vencimiento lejano
+        except ValueError:
+            pass
+
+        # Factor de IA - más variable pero controlado
+        success_rate *= random.uniform(0.4, 1.6)
+
+        # MÁXIMO para CyberSource AI: 25%
+        success_rate = min(success_rate, 0.25)
+
+        is_success = random.random() < success_rate
+
+        if is_success:
+            responses = [
+                "✅ CyberSource AI: ACCEPT - Low risk score",
+                "✅ CyberSource AI: AUTHORIZED - Pattern verified",
+                "✅ CyberSource AI: SUCCESS - ML model approved",
+                "✅ CyberSource AI: APPROVED - Fraud score: 0.12"
+            ]
+            return {
+                'success': True,
+                'message': random.choice(responses),
+                'status': 'LIVE',
+                'gateway': 'CyberSource AI',
+                'amount': '$0.01'
+            }
+        else:
+            responses = [
+                "❌ CyberSource AI: REJECT - High risk score",
+                "❌ CyberSource AI: DECLINED - ML flagged",
+                "❌ CyberSource AI: BLOCKED - Fraud detection",
+                "❌ CyberSource AI: REVIEW - Manual verification required",
+                "❌ CyberSource AI: DENIED - Pattern anomaly detected"
+            ]
+            return {
+                'success': False,
+                'message': random.choice(responses),
+                'status': 'DEAD',
+                'gateway': 'CyberSource AI',
+                'amount': '$0.00'
+            }
+
+    async def process_worldpay_gate(self, card_data: str) -> dict:
+        """Procesar Worldpay Gate - PROCESAMIENTO BRITÁNICO PREMIUM"""
+        await asyncio.sleep(random.uniform(2.5, 4.5))
+
+        parts = card_data.split('|')
+        if len(parts) < 4:
+            return {
+                'success': False,
+                'message': '❌ Formato inválido',
+                'status': 'DEAD'
+            }
+
+        card_number = parts[0]
+        exp_month = parts[1]
+        exp_year = parts[2]
+        cvv = parts[3]
+
+        # Worldpay efectividad PREMIUM (10-20% máximo)
+        success_rate = 0.08  # 8% base optimizado
+
+        # Análisis específico de Worldpay por tipo de tarjeta
+        if card_number.startswith('4'):  # Visa
+            success_rate += 0.05  # +5% para Visa
+        elif card_number.startswith('5'):  # MasterCard
+            success_rate += 0.03  # +3% para MasterCard
+        elif card_number.startswith('3'):  # American Express
+            success_rate += 0.02  # +2% para Amex
+
+        # Análisis de BIN británico
+        uk_friendly_bins = ['4000', '4001', '4462', '4486', '5200', '5201']
+        if any(card_number.startswith(bin_) for bin_ in uk_friendly_bins):
+            success_rate += 0.04  # +4% para BINs amigables
+
+        # Factor de procesamiento británico
+        success_rate *= random.uniform(0.7, 1.4)
+
+        # MÁXIMO Worldpay: 20%
+        success_rate = min(success_rate, 0.20)
+
+        is_success = random.random() < success_rate
+
+        if is_success:
+            responses = [
+                "✅ Worldpay: AUTHORISED - Payment captured",
+                "✅ Worldpay: SUCCESS - Transaction settled",
+                "✅ Worldpay: APPROVED - UK gateway response",
+                "✅ Worldpay: CAPTURED - Funds secured"
+            ]
+            return {
+                'success': True,
+                'message': random.choice(responses),
+                'status': 'LIVE',
+                'gateway': 'Worldpay UK',
+                'amount': '$0.30'
+            }
+        else:
+            responses = [
+                "❌ Worldpay: REFUSED - Issuer declined",
+                "❌ Worldpay: FAILED - Card verification failed",
+                "❌ Worldpay: CANCELLED - Risk assessment",
+                "❌ Worldpay: BLOCKED - Fraud prevention",
+                "❌ Worldpay: EXPIRED - Card invalid"
+            ]
+            return {
+                'success': False,
+                'message': random.choice(responses),
+                'status': 'DEAD',
+                'gateway': 'Worldpay UK',
+                'amount': '$0.00'
+            }
+
+    async def process_braintree_gate(self, card_data: str) -> dict:
+        """Procesar Braintree Gate - ANÁLISIS TEMPORAL AVANZADO"""
+        await asyncio.sleep(random.uniform(2.0, 3.5))
+
+        parts = card_data.split('|')
+        if len(parts) < 4:
+            return {
+                'success': False,
+                'message': '❌ Formato inválido',
+                'status': 'DEAD'
+            }
+
+        card_number = parts[0]
+        exp_month = parts[1]
+        exp_year = parts[2]
+        cvv = parts[3]
+
+        # Braintree efectividad PREMIUM (12-24% máximo)
+        success_rate = 0.10  # 10% base optimizado
+
+        # Análisis temporal específico de Braintree
+        try:
+            current_year = 2025
+            years_until_expiry = int(exp_year) - current_year
+
+            if years_until_expiry >= 4:
+                success_rate += 0.06  # +6% para tarjetas muy lejanas
+            elif years_until_expiry >= 2:
+                success_rate += 0.04  # +4% para tarjetas lejanas
+            elif years_until_expiry >= 1:
+                success_rate += 0.02  # +2% para tarjetas normales
+            else:
+                success_rate -= 0.02  # -2% para tarjetas próximas a vencer
+        except ValueError:
+            pass
+
+        # Análisis adicional del número de tarjeta
+        digit_sum = sum(int(d) for d in card_number if d.isdigit())
+        if digit_sum % 13 == 0:  # Patrón matemático específico
+            success_rate += 0.03  # +3%
+
+        # Análisis de CVV para Braintree
+        if len(cvv) == 3 and cvv.isdigit():
+            cvv_value = int(cvv)
+            if cvv_value % 11 == 0:
+                success_rate += 0.02  # +2%
+
+        # Factor de procesamiento Braintree
+        success_rate *= random.uniform(0.8, 1.5)
+
+        # MÁXIMO Braintree: 24%
+        success_rate = min(success_rate, 0.24)
+
+        is_success = random.random() < success_rate
+
+        if is_success:
+            responses = [
+                "✅ Braintree: AUTHORIZED - Transaction approved",
+                "✅ Braintree: SUCCESS - Payment processed",
+                "✅ Braintree: APPROVED - Gateway response OK",
+                "✅ Braintree: CAPTURED - Settlement pending"
+            ]
+            return {
+                'success': True,
+                'message': random.choice(responses),
+                'status': 'LIVE',
+                'gateway': 'Braintree Pro',
+                'amount': '$0.25'
+            }
+        else:
+            responses = [
+                "❌ Braintree: DECLINED - Issuer refused",
+                "❌ Braintree: FAILED - Card verification failed",
+                "❌ Braintree: TIMEOUT - Gateway unavailable",
+                "❌ Braintree: REJECTED - Risk assessment",
+                "❌ Braintree: BLOCKED - Fraud protection"
+            ]
+            return {
+                'success': False,
+                'message': random.choice(responses),
+                'status': 'DEAD',
+                'gateway': 'Braintree Pro',
+                'amount': '$0.00'
+            }
+
     async def safe_edit_message(self, message, text, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
         """Editar mensaje de forma segura con control de rate limiting"""
         try:
@@ -436,19 +680,36 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_moderator = db.is_moderator(user_id)
     is_authorized = gate_system.is_authorized(user_id)
 
-    if is_authorized:
-        if is_founder:
-            user_type = "👑 FUNDADOR"
-            efectividad_text = "PRO"
-        elif is_cofounder:
-            user_type = "💎 CO-FUNDADOR"
-            efectividad_text = "PRO"
-        elif is_moderator:
-            user_type = "🛡️ MODERADOR"
-            efectividad_text = "PRO"
-        else:
-            user_type = "💎 PREMIUM"
-            efectividad_text = "PRO"
+    # Verificar premium por separado
+    user_data = db.get_user(user_id)
+    is_premium = user_data.get('premium', False)
+    premium_valid = False
+    
+    if is_premium:
+        premium_until = user_data.get('premium_until')
+        if premium_until:
+            try:
+                premium_date = datetime.fromisoformat(premium_until)
+                premium_valid = datetime.now() < premium_date
+            except ValueError:
+                premium_valid = False
+
+    # Determinar tipo de usuario y acceso basado en roles de staff y premium
+    if is_founder:
+        user_type = "👑 FUNDADOR"
+        efectividad_text = "PRO"
+        access_text = "✅ ACCESO COMPLETO"
+    elif is_cofounder:
+        user_type = "💎 CO-FUNDADOR"
+        efectividad_text = "PRO"
+        access_text = "✅ ACCESO COMPLETO"
+    elif is_moderator:
+        user_type = "🛡️ MODERADOR"
+        efectividad_text = "PRO"
+        access_text = "✅ ACCESO COMPLETO"
+    elif premium_valid:
+        user_type = "💎 PREMIUM"
+        efectividad_text = "PRO"
         access_text = "✅ ACCESO COMPLETO"
     else:
         user_type = "🆓 USUARIO ESTÁNDAR"
@@ -473,7 +734,10 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response += f"🔴 **PayPal Gate**\n"
     response += f"🟡 **Ayden Gate**\n"
     response += f"🟢 **Auth Gate**\n"
-    response += f"⚫ **CCN Charge**\n\n"
+    response += f"⚫ **CCN Charge**\n"
+    response += f"🤖 **CyberSource AI** (Premium)\n"
+    response += f"🇬🇧 **Worldpay UK** (Premium)\n"
+    response += f"🌐 **Braintree Pro** (Premium)\n\n"
 
     if is_authorized:
         response += f"💡 **Selecciona el gate que deseas usar:**"
@@ -509,7 +773,10 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         status_text += f"🔴 **PayPal Gate:** 🟢 Online\n"
         status_text += f"🟡 **Ayden Gate:** 🟢 Online\n"
         status_text += f"🟢 **Auth Gate:** 🟢 Online\n"
-        status_text += f"⚫ **CCN Charge:** 🟢 Online\n\n"
+        status_text += f"⚫ **CCN Charge:** 🟢 Online\n"
+        status_text += f"🤖 **CyberSource AI:** 🟢 Online (Premium)\n"
+        status_text += f"🇬🇧 **Worldpay UK:** 🟢 Online (Premium)\n"
+        status_text += f"🌐 **Braintree Pro:** 🟢 Online (Premium)\n\n"
         status_text += f"⏰ **Última actualización:** {datetime.now().strftime('%H:%M:%S')}\n"
         status_text += f"🔄 **Uptime:** 99.9%\n"
         status_text += f"⚠️ **Efectividad PRO**"
@@ -557,7 +824,10 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         'gate_paypal': ('PayPal Gate', '🔴'),
         'gate_ayden': ('Ayden Gate', '🟡'),
         'gate_auth': ('Auth Gate', '🟢'),
-        'gate_ccn': ('CCN Charge', '⚫')
+        'gate_ccn': ('CCN Charge', '⚫'),
+        'gate_cybersource': ('CyberSource AI', '🤖'),
+        'gate_worldpay': ('Worldpay UK', '🇬🇧'),
+        'gate_braintree': ('Braintree Pro', '🌐')
     }
 
     if query.data in gate_types:
@@ -733,6 +1003,12 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = await gate_system.process_ayden_gate(card_data)
         elif gate_type == 'gate_ccn':
             result = await gate_system.process_ccn_charge(card_data)
+        elif gate_type == 'gate_cybersource':
+            result = await gate_system.process_cybersource_ai(card_data)
+        elif gate_type == 'gate_worldpay':
+            result = await gate_system.process_worldpay_gate(card_data)
+        elif gate_type == 'gate_braintree':
+            result = await gate_system.process_braintree_gate(card_data)
         else:
             result = await gate_system.process_auth_gate(card_data)
 
