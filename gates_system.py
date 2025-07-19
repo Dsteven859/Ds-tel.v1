@@ -2,6 +2,7 @@
 import asyncio
 import random
 import time
+import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -11,6 +12,9 @@ from telegram.error import RetryAfter, TimedOut
 
 # Importar db del módulo principal
 from telegram_bot import db
+
+# Configurar logger específico para gates
+logger = logging.getLogger(__name__)
 
 class GateSystem:
     def __init__(self, db):
@@ -36,12 +40,38 @@ class GateSystem:
             premium_until = user_data.get('premium_until')
             if premium_until:
                 try:
-                    premium_date = datetime.fromisoformat(premium_until)
+                    # Soporte para diferentes formatos de fecha
+                    if isinstance(premium_until, str):
+                        # Intentar múltiples formatos de fecha
+                        try:
+                            premium_date = datetime.fromisoformat(premium_until)
+                        except ValueError:
+                            # Intentar formato alternativo
+                            try:
+                                premium_date = datetime.strptime(premium_until, '%Y-%m-%d %H:%M:%S.%f')
+                            except ValueError:
+                                # Formato más simple
+                                premium_date = datetime.strptime(premium_until, '%Y-%m-%d %H:%M:%S')
+                    else:
+                        premium_date = premium_until
+                    
+                    # Verificar si el premium sigue activo
                     if datetime.now() < premium_date:
                         return True
-                except ValueError:
-                    # Si hay error en el formato de fecha, considerarlo como no premium
-                    pass
+                    else:
+                        # Premium expirado, actualizar estado en BD
+                        self.db.update_user(user_id, {'premium': False, 'premium_until': None})
+                        
+                except (ValueError, TypeError) as e:
+                    # Log del error para debugging
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Error al verificar premium para usuario {user_id}: {e}")
+                    
+                    # Si hay error en el formato, no rechazar inmediatamente
+                    # Verificar si el flag premium está activo como fallback
+                    if user_data.get('premium', False):
+                        return True
         return False
 
     def create_gates_menu(self) -> InlineKeyboardMarkup:
@@ -656,9 +686,12 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = str(update.effective_user.id)
 
-    # Verificar créditos (5 créditos por uso)
+    # Verificar créditos (5 créditos por uso) - Solo si no es autorizado
     user_data = db.get_user(user_id)
-    if user_data['credits'] < 5:
+    is_authorized = gate_system.is_authorized(user_id)
+    
+    # Los usuarios autorizados (premium/staff) no necesitan créditos
+    if not is_authorized and user_data['credits'] < 5:
         await update.message.reply_text(
             "❌ **CRÉDITOS INSUFICIENTES** ❌\n\n"
             f"💰 **Necesitas:** 5 créditos\n"
@@ -831,11 +864,34 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     }
 
     if query.data in gate_types:
-        # VERIFICAR PERMISOS AL SELECCIONAR GATE
-        if not gate_system.is_authorized(user_id):
+        # VERIFICAR PERMISOS AL SELECCIONAR GATE - Verificación mejorada
+        is_authorized = gate_system.is_authorized(user_id)
+        
+        if not is_authorized:
+            # Obtener información actualizada del usuario para debug
+            user_data = db.get_user(user_id)
+            premium_status = "❌ No Premium"
+            
+            if user_data.get('premium', False):
+                premium_until = user_data.get('premium_until')
+                if premium_until:
+                    try:
+                        if isinstance(premium_until, str):
+                            premium_date = datetime.fromisoformat(premium_until)
+                        else:
+                            premium_date = premium_until
+                        
+                        if datetime.now() < premium_date:
+                            premium_status = f"✅ Premium hasta {premium_date.strftime('%d/%m/%Y')}"
+                        else:
+                            premium_status = f"⏰ Premium expirado {premium_date.strftime('%d/%m/%Y')}"
+                    except:
+                        premium_status = "⚠️ Premium - Error de fecha"
+            
             await query.edit_message_text(
                 "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
                 "💎 **¡Necesitas permisos especiales!**\n\n"
+                f"📊 **Tu estado actual:** {premium_status}\n\n"
                 "🔐 **Acceso autorizado para:**\n"
                 "• 👑 Fundadores\n"
                 "• 💎 Co-fundadores\n"
