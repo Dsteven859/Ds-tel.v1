@@ -34,7 +34,7 @@ class GateSystem:
         if self.db.is_moderator(user_id):
             return True
 
-        # Verificar si es premium activo
+        # Verificar si es premium activo - CORREGIDO
         user_data = self.db.get_user(user_id)
         if user_data.get('premium', False):
             premium_until = user_data.get('premium_until')
@@ -61,6 +61,7 @@ class GateSystem:
                     else:
                         # Premium expirado, actualizar estado en BD
                         self.db.update_user(user_id, {'premium': False, 'premium_until': None})
+                        return False
                         
                 except (ValueError, TypeError) as e:
                     # Log del error para debugging
@@ -68,10 +69,11 @@ class GateSystem:
                     logger = logging.getLogger(__name__)
                     logger.warning(f"Error al verificar premium para usuario {user_id}: {e}")
                     
-                    # Si hay error en el formato, no rechazar inmediatamente
-                    # Verificar si el flag premium está activo como fallback
-                    if user_data.get('premium', False):
-                        return True
+                    # Si hay error en el formato, asumir que es premium válido si el flag está activo
+                    return True
+            else:
+                # Si no hay fecha de vencimiento pero el flag premium está activo, permitir acceso
+                return True
         return False
 
     def create_gates_menu(self) -> InlineKeyboardMarkup:
@@ -713,7 +715,7 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_moderator = db.is_moderator(user_id)
     is_authorized = gate_system.is_authorized(user_id)
 
-    # Verificar premium por separado
+    # Verificar premium por separado - CORREGIDO
     user_data = db.get_user(user_id)
     is_premium = user_data.get('premium', False)
     premium_valid = False
@@ -722,10 +724,17 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         premium_until = user_data.get('premium_until')
         if premium_until:
             try:
-                premium_date = datetime.fromisoformat(premium_until)
+                if isinstance(premium_until, str):
+                    premium_date = datetime.fromisoformat(premium_until)
+                else:
+                    premium_date = premium_until
                 premium_valid = datetime.now() < premium_date
-            except ValueError:
-                premium_valid = False
+            except (ValueError, TypeError):
+                # Si hay error en el formato pero el flag premium está activo, asumir válido
+                premium_valid = True
+        else:
+            # Si no hay fecha pero el flag premium está activo, asumir válido
+            premium_valid = True
 
     # Determinar tipo de usuario y acceso basado en roles de staff y premium
     if is_founder:
