@@ -1,3 +1,4 @@
+
 import asyncio
 from typing import Dict, Set
 
@@ -1767,26 +1768,31 @@ async def send_admin_log(context,
         # No hacer raise para que el comando principal no falle
 
 
-# Sistema de mutes automáticos
-muted_users = {
-}  # {chat_id: {user_id: {'unmute_time': datetime, 'reason': str, 'muted_by': str}}}
+# Sistema de mutes automáticos - Corregido
+muted_users = {}  # {chat_id: {user_id: {'unmute_time': datetime, 'reason': str, 'muted_by': str}}}
 
 
 def auto_mute_user(chat_id: str, user_id: str, duration_hours: float,
                    reason: str, muted_by: str):
-    """Agregar usuario al sistema de mutes automáticos"""
-    unmute_time = datetime.now() + timedelta(hours=duration_hours)
+    """Agregar usuario al sistema de mutes automáticos - Corregido"""
+    try:
+        unmute_time = datetime.now() + timedelta(hours=duration_hours)
 
-    if chat_id not in muted_users:
-        muted_users[chat_id] = {}
+        if chat_id not in muted_users:
+            muted_users[chat_id] = {}
 
-    muted_users[chat_id][user_id] = {
-        'unmute_time': unmute_time,
-        'reason': reason,
-        'muted_by': muted_by
-    }
+        muted_users[chat_id][user_id] = {
+            'unmute_time': unmute_time,
+            'reason': reason,
+            'muted_by': muted_by,
+            'muted_at': datetime.now().isoformat()
+        }
 
-    return unmute_time
+        logger.info(f"Usuario {user_id} muteado en chat {chat_id} por {duration_hours}h")
+        return unmute_time
+    except Exception as e:
+        logger.error(f"Error en auto_mute_user: {e}")
+        return None
 
 
 # Decorador para verificar mantenimiento
@@ -4316,7 +4322,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "📝 **Nota:** El ID debe ser un número de al menos 5 dígitos",
                 parse_mode=ParseMode.MARKDOWN)
             return
-            
+
         target_user_id = args[0]
         try:
             # Intentar obtener información del usuario
@@ -4370,7 +4376,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Escapar caracteres especiales para evitar errores de parsing
     safe_full_name = escape_markdown(full_name)
     safe_username = escape_markdown(username)
-    
+
     response = f"╭─────────────────────────────╮\n"
     response += f"│    🔍 **INFORMACIÓN DE USUARIO**   │\n"
     response += f"╰─────────────────────────────╯\n\n"
@@ -6029,309 +6035,367 @@ async def fix_founder_command(update: Update,
 
 @admin_only
 async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mutear usuario manualmente - Versión mejorada"""
-    args = context.args
-    chat_id = str(update.effective_chat.id)
-
-    if not args:
-        await update.message.reply_text(
-            "🔇 **MUTEAR USUARIO** 🔇\n\n"
-            "**Uso:** `/mute [user_id] [duración] [razón]`\n\n"
-            "**Duraciones disponibles:**\n"
-            "• `30m` - 30 minutos\n"
-            "• `1h` - 1 hora\n"
-            "• `6h` - 6 horas\n"
-            "• `12h` - 12 horas (por defecto)\n"
-            "• `24h` - 24 horas\n"
-            "• `48h` - 48 horas\n\n"
-            "**Ejemplos:**\n"
-            "• `/mute 123456789 2h Spam excesivo`\n"
-            "• `/mute 123456789` (12h por defecto)\n\n"
-            "⚠️ **Solo para casos serios:** Spam, flood, comportamiento disruptivo",
-            parse_mode=ParseMode.MARKDOWN)
-        return
-
-    # Validar user_id
-    target_user_id = args[0].strip()
-    if not target_user_id.isdigit():
-        await update.message.reply_text(
-            "❌ **ID INVÁLIDO**\n\n"
-            "💡 El ID del usuario debe ser numérico\n"
-            "📋 **Ejemplo:** `/mute 123456789 2h Spam`")
-        return
-
-    target_user_id_int = int(target_user_id)
-
-    # Verificar que no sea el propio usuario
-    if target_user_id_int == update.effective_user.id:
-        await update.message.reply_text(
-            "❌ **NO PUEDES MUTEARTE A TI MISMO**\n\n"
-            "💡 Verifica el ID del usuario")
-        return
-
-    # Verificar que no sea staff
-    is_target_admin = target_user_id_int in ADMIN_IDS
-    target_staff = db.get_staff_role(target_user_id)
-
-    if is_target_admin or target_staff:
-        await update.message.reply_text(
-            "❌ **NO SE PUEDE MUTEAR STAFF**\n\n"
-            "🛡️ Los administradores, fundadores, co-fundadores y moderadores están protegidos",
-            parse_mode=ParseMode.MARKDOWN)
-        return
-
-    # Verificar si ya está muteado
-    if (chat_id in muted_users and target_user_id in muted_users[chat_id]
-            and datetime.now()
-            < muted_users[chat_id][target_user_id]['unmute_time']):
-        current_mute = muted_users[chat_id][target_user_id]
-        time_left = current_mute['unmute_time'] - datetime.now()
-        hours_left = int(time_left.total_seconds() // 3600)
-        minutes_left = int((time_left.total_seconds() % 3600) // 60)
-
-        await update.message.reply_text(
-            f"⚠️ **USUARIO YA ESTÁ MUTEADO**\n\n"
-            f"👤 **Usuario:** {target_user_id}\n"
-            f"⏰ **Tiempo restante:** {hours_left}h {minutes_left}m\n"
-            f"📝 **Razón actual:** {current_mute['reason']}\n\n"
-            f"💡 Usa `/unmute {target_user_id}` para desmutear")
-        return
-
-    # Procesar duración
-    duration_hours = 12  # Por defecto 12 horas
-    if len(args) > 1:
-        duration_str = args[1].lower()
-        try:
-            if duration_str.endswith('m'):
-                duration_minutes = int(duration_str[:-1])
-                if duration_minutes < 5:
-                    await update.message.reply_text(
-                        "❌ **Duración mínima:** 5 minutos")
-                    return
-                duration_hours = duration_minutes / 60
-            elif duration_str.endswith('h'):
-                duration_hours = int(duration_str[:-1])
-                if duration_hours < 1:
-                    await update.message.reply_text(
-                        "❌ **Duración mínima:** 1 hora")
-                    return
-                if duration_hours > 72:
-                    await update.message.reply_text(
-                        "❌ **Duración máxima:** 72 horas")
-                    return
-            elif duration_str.isdigit():
-                duration_hours = int(duration_str)
-                if duration_hours > 72:
-                    duration_hours = 72
-        except ValueError:
-            duration_hours = 12  # Fallback a 12 horas
-
-    # Procesar razón
-    reason = ' '.join(
-        args[2:]) if len(args) > 2 else "Violación de normas del grupo"
-
-    # Verificar que el usuario existe en el chat
+    """Mutear usuario manualmente - Versión corregida"""
     try:
-        chat_member = await context.bot.get_chat_member(
-            update.effective_chat.id, target_user_id_int)
-        target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
+        args = context.args
+        chat_id = str(update.effective_chat.id)
 
-        # Verificar que no sea un bot
-        if chat_member.user.is_bot:
-            await update.message.reply_text("❌ **NO SE PUEDE MUTEAR BOTS**\n\n"
-                                            "💡 Los bots no pueden ser muteados"
-                                            )
+        if not args:
+            await update.message.reply_text(
+                "🔇 **MUTEAR USUARIO** 🔇\n\n"
+                "**Uso:** `/mute [user_id] [duración] [razón]`\n\n"
+                "**Duraciones disponibles:**\n"
+                "• `30m` - 30 minutos\n"
+                "• `1h` - 1 hora\n"
+                "• `6h` - 6 horas\n"
+                "• `12h` - 12 horas (por defecto)\n"
+                "• `24h` - 24 horas\n"
+                "• `48h` - 48 horas\n\n"
+                "**Ejemplos:**\n"
+                "• `/mute 123456789 2h Spam excesivo`\n"
+                "• `/mute 123456789` (12h por defecto)\n\n"
+                "⚠️ **Solo para casos serios:** Spam, flood, comportamiento disruptivo",
+                parse_mode=ParseMode.MARKDOWN)
             return
 
+        # Validar user_id
+        target_user_id = args[0].strip()
+        if not target_user_id.isdigit():
+            await update.message.reply_text(
+                "❌ **ID INVÁLIDO**\n\n"
+                "💡 El ID del usuario debe ser numérico\n"
+                "📋 **Ejemplo:** `/mute 123456789 2h Spam`")
+            return
+
+        target_user_id_int = int(target_user_id)
+
+        # Verificar que no sea el propio usuario
+        if target_user_id_int == update.effective_user.id:
+            await update.message.reply_text(
+                "❌ **NO PUEDES MUTEARTE A TI MISMO**\n\n"
+                "💡 Verifica el ID del usuario")
+            return
+
+        # Verificar que no sea staff
+        is_target_admin = target_user_id_int in ADMIN_IDS
+        target_staff = db.get_staff_role(target_user_id)
+
+        if is_target_admin or target_staff:
+            await update.message.reply_text(
+                "❌ **NO SE PUEDE MUTEAR STAFF**\n\n"
+                "🛡️ Los administradores, fundadores, co-fundadores y moderadores están protegidos",
+                parse_mode=ParseMode.MARKDOWN)
+            return
+
+        # Verificar si ya está muteado
+        try:
+            if (chat_id in muted_users and target_user_id in muted_users[chat_id]):
+                current_mute = muted_users[chat_id][target_user_id]
+                if datetime.now() < current_mute['unmute_time']:
+                    time_left = current_mute['unmute_time'] - datetime.now()
+                    hours_left = int(time_left.total_seconds() // 3600)
+                    minutes_left = int((time_left.total_seconds() % 3600) // 60)
+
+                    await update.message.reply_text(
+                        f"⚠️ **USUARIO YA ESTÁ MUTEADO**\n\n"
+                        f"👤 **Usuario:** {target_user_id}\n"
+                        f"⏰ **Tiempo restante:** {hours_left}h {minutes_left}m\n"
+                        f"📝 **Razón actual:** {current_mute['reason']}\n\n"
+                        f"💡 Usa `/unmute {target_user_id}` para desmutear")
+                    return
+        except Exception as e:
+            logger.warning(f"Error verificando mute existente: {e}")
+
+        # Procesar duración
+        duration_hours = 12  # Por defecto 12 horas
+        if len(args) > 1:
+            duration_str = args[1].lower()
+            try:
+                if duration_str.endswith('m'):
+                    duration_minutes = int(duration_str[:-1])
+                    if duration_minutes < 5:
+                        await update.message.reply_text(
+                            "❌ **Duración mínima:** 5 minutos")
+                        return
+                    duration_hours = duration_minutes / 60
+                elif duration_str.endswith('h'):
+                    duration_hours = int(duration_str[:-1])
+                    if duration_hours < 1:
+                        await update.message.reply_text(
+                            "❌ **Duración mínima:** 1 hora")
+                        return
+                    if duration_hours > 72:
+                        await update.message.reply_text(
+                            "❌ **Duración máxima:** 72 horas")
+                        return
+                elif duration_str.isdigit():
+                    duration_hours = int(duration_str)
+                    if duration_hours > 72:
+                        duration_hours = 72
+            except ValueError:
+                duration_hours = 12  # Fallback a 12 horas
+
+        # Procesar razón
+        reason = ' '.join(
+            args[2:]) if len(args) > 2 else "Violación de normas del grupo"
+
+        # Verificar que el usuario existe en el chat
+        target_username = f"Usuario {target_user_id}"
+        try:
+            chat_member = await context.bot.get_chat_member(
+                update.effective_chat.id, target_user_id_int)
+            target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
+
+            # Verificar que no sea un bot
+            if chat_member.user.is_bot:
+                await update.message.reply_text("❌ **NO SE PUEDE MUTEAR BOTS**\n\n"
+                                                "💡 Los bots no pueden ser muteados"
+                                                )
+                return
+
+        except Exception as e:
+            logger.warning(f"No se pudo obtener info del usuario: {e}")
+            # Continuar con el ID como nombre
+
+        # Aplicar mute
+        unmute_time = auto_mute_user(chat_id, target_user_id, duration_hours,
+                                     reason, update.effective_user.first_name)
+
+        if unmute_time is None:
+            await update.message.reply_text(
+                "❌ **ERROR AL APLICAR MUTE**\n\n"
+                "💡 Ocurrió un error interno. Intenta nuevamente.")
+            return
+
+        # Enviar log administrativo
+        try:
+            await send_admin_log(context=context,
+                                 action_type='MUTE',
+                                 admin_user=update.effective_user,
+                                 target_user_id=target_user_id,
+                                 reason=reason,
+                                 group_id=chat_id,
+                                 additional_data={
+                                     'duration_hours': duration_hours,
+                                     'unmute_time': unmute_time.isoformat(),
+                                     'target_username': target_username
+                                 })
+        except Exception as e:
+            logger.warning(f"Error enviando log: {e}")
+
+        response = f"🔇 **USUARIO MUTEADO EXITOSAMENTE** 🔇\n\n"
+        response += f"👤 **Usuario:** {target_username}\n"
+        response += f"🆔 **ID:** `{target_user_id}`\n"
+        response += f"⏰ **Duración:** {duration_hours}h\n"
+        response += f"🔓 **Desmute automático:** {unmute_time.strftime('%d/%m/%Y %H:%M')}\n"
+        response += f"📝 **Razón:** {reason}\n"
+        response += f"👮‍♂️ **Muteado por:** {update.effective_user.first_name}\n"
+        response += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        response += f"💡 **El usuario no podrá enviar mensajes durante este período**\n"
+        response += f"🔧 **Desmute manual:** `/unmute {target_user_id}`"
+
+        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
     except Exception as e:
+        logger.error(f"Error en comando mute: {e}")
         await update.message.reply_text(
-            f"❌ **USUARIO NO ENCONTRADO**\n\n"
-            f"💡 El usuario con ID `{target_user_id}` no está en este chat\n"
-            f"🔍 Verifica que el ID sea correcto")
-        return
-
-    # Aplicar mute
-    unmute_time = auto_mute_user(chat_id, target_user_id, duration_hours,
-                                 reason, update.effective_user.first_name)
-
-    # Enviar log administrativo
-    await send_admin_log(context=context,
-                         action_type='MUTE',
-                         admin_user=update.effective_user,
-                         target_user_id=target_user_id,
-                         reason=reason,
-                         group_id=chat_id,
-                         additional_data={
-                             'duration_hours': duration_hours,
-                             'unmute_time': unmute_time.isoformat(),
-                             'target_username': target_username
-                         })
-
-    response = f"🔇 **USUARIO MUTEADO EXITOSAMENTE** 🔇\n\n"
-    response += f"👤 **Usuario:** {target_username}\n"
-    response += f"🆔 **ID:** `{target_user_id}`\n"
-    response += f"⏰ **Duración:** {duration_hours}h\n"
-    response += f"🔓 **Desmute automático:** {unmute_time.strftime('%d/%m/%Y %H:%M')}\n"
-    response += f"📝 **Razón:** {reason}\n"
-    response += f"👮‍♂️ **Muteado por:** {update.effective_user.first_name}\n"
-    response += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-    response += f"💡 **El usuario no podrá enviar mensajes durante este período**\n"
-    response += f"🔧 **Desmute manual:** `/unmute {target_user_id}`"
-
-    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+            "❌ **ERROR TEMPORAL**\n\n"
+            "Ha ocurrido un error interno. Por favor intenta nuevamente.\n\n"
+            "Si el problema persiste, contacta a los administradores.")
 
 
 @admin_only
 async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Desmutear usuario manualmente - Versión mejorada"""
-    args = context.args
-    chat_id = str(update.effective_chat.id)
-
-    if not args:
-        await update.message.reply_text(
-            "🔊 **DESMUTEAR USUARIO** 🔊\n\n"
-            "**Uso:** `/unmute [user_id]`\n\n"
-            "**Ejemplo:** `/unmute 123456789`\n\n"
-            "💡 **También puedes usar:** `/mutelist` para ver usuarios muteados",
-            parse_mode=ParseMode.MARKDOWN)
-        return
-
-    # Validar user_id
-    target_user_id = args[0].strip()
-    if not target_user_id.isdigit():
-        await update.message.reply_text(
-            "❌ **ID INVÁLIDO**\n\n"
-            "💡 El ID del usuario debe ser numérico\n"
-            "📋 **Ejemplo:** `/unmute 123456789`")
-        return
-
-    target_user_id_int = int(target_user_id)
-
-    # Verificar si el usuario está muteado
-    if (chat_id not in muted_users
-            or target_user_id not in muted_users[chat_id] or datetime.now()
-            >= muted_users[chat_id][target_user_id]['unmute_time']):
-
-        await update.message.reply_text(
-            f"❌ **USUARIO NO ESTÁ MUTEADO**\n\n"
-            f"👤 **Usuario ID:** `{target_user_id}`\n"
-            f"💡 Este usuario no está en la lista de muteados activos\n\n"
-            f"🔍 **Usa `/mutelist` para ver usuarios muteados**",
-            parse_mode=ParseMode.MARKDOWN)
-        return
-
-    # Obtener datos del mute antes de remover
-    mute_data = muted_users[chat_id][target_user_id]
-    original_reason = mute_data['reason']
-    muted_by = mute_data['muted_by']
-
-    # Calcular tiempo que estuvo muteado
-    original_unmute_time = mute_data['unmute_time']
-    time_served = datetime.now() - (original_unmute_time - timedelta(hours=12)
-                                    )  # Aproximado
-
-    # Remover del sistema de mutes
-    del muted_users[chat_id][target_user_id]
-    if not muted_users[chat_id]:
-        del muted_users[chat_id]
-
-    # Obtener información del usuario si es posible
+    """Desmutear usuario manualmente - Versión corregida"""
     try:
-        chat_member = await context.bot.get_chat_member(
-            update.effective_chat.id, target_user_id_int)
-        target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
-    except:
-        target_username = f"ID: {target_user_id}"
+        args = context.args
+        chat_id = str(update.effective_chat.id)
 
-    # Enviar log administrativo
-    await send_admin_log(context=context,
-                         action_type='UNMUTE',
-                         admin_user=update.effective_user,
-                         target_user_id=target_user_id,
-                         reason="Desmute manual",
-                         group_id=chat_id,
-                         additional_data={
-                             'original_reason': original_reason,
-                             'originally_muted_by': muted_by,
-                             'target_username': target_username
-                         })
+        if not args:
+            await update.message.reply_text(
+                "🔊 **DESMUTEAR USUARIO** 🔊\n\n"
+                "**Uso:** `/unmute [user_id]`\n\n"
+                "**Ejemplo:** `/unmute 123456789`\n\n"
+                "💡 **También puedes usar:** `/mutelist` para ver usuarios muteados",
+                parse_mode=ParseMode.MARKDOWN)
+            return
 
-    response = f"🔊 **USUARIO DESMUTEADO EXITOSAMENTE** 🔊\n\n"
-    response += f"👤 **Usuario:** {target_username}\n"
-    response += f"🆔 **ID:** `{target_user_id}`\n"
-    response += f"✅ **Estado:** Puede enviar mensajes nuevamente\n"
-    response += f"📝 **Razón original:** {original_reason}\n"
-    response += f"👮‍♂️ **Muteado originalmente por:** {muted_by}\n"
-    response += f"🔓 **Desmuteado por:** {update.effective_user.first_name}\n"
-    response += f"📅 **Fecha de desmute:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-    response += f"💡 **El mute ha sido removido manualmente**"
+        # Validar user_id
+        target_user_id = args[0].strip()
+        if not target_user_id.isdigit():
+            await update.message.reply_text(
+                "❌ **ID INVÁLIDO**\n\n"
+                "💡 El ID del usuario debe ser numérico\n"
+                "📋 **Ejemplo:** `/unmute 123456789`")
+            return
 
-    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+        target_user_id_int = int(target_user_id)
+
+        # Verificar si el usuario está muteado
+        user_is_muted = False
+        mute_data = None
+
+        try:
+            if (chat_id in muted_users and target_user_id in muted_users[chat_id]):
+                mute_data = muted_users[chat_id][target_user_id]
+                if datetime.now() < mute_data['unmute_time']:
+                    user_is_muted = True
+        except Exception as e:
+            logger.warning(f"Error verificando estado de mute: {e}")
+
+        if not user_is_muted:
+            await update.message.reply_text(
+                f"❌ **USUARIO NO ESTÁ MUTEADO**\n\n"
+                f"👤 **Usuario ID:** `{target_user_id}`\n"
+                f"💡 Este usuario no está en la lista de muteados activos\n\n"
+                f"🔍 **Usa `/mutelist` para ver usuarios muteados**",
+                parse_mode=ParseMode.MARKDOWN)
+            return
+
+        # Obtener datos del mute antes de remover
+        original_reason = mute_data.get('reason', 'Sin razón especificada')
+        muted_by = mute_data.get('muted_by', 'Usuario desconocido')
+
+        # Remover del sistema de mutes
+        try:
+            del muted_users[chat_id][target_user_id]
+            if not muted_users[chat_id]:
+                del muted_users[chat_id]
+        except Exception as e:
+            logger.warning(f"Error removiendo del sistema de mutes: {e}")
+
+        # Obtener información del usuario si es posible
+        target_username = f"Usuario {target_user_id}"
+        try:
+            chat_member = await context.bot.get_chat_member(
+                update.effective_chat.id, target_user_id_int)
+            target_username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
+        except Exception as e:
+            logger.warning(f"No se pudo obtener info del usuario: {e}")
+
+        # Enviar log administrativo
+        try:
+            await send_admin_log(context=context,
+                                 action_type='UNMUTE',
+                                 admin_user=update.effective_user,
+                                 target_user_id=target_user_id,
+                                 reason="Desmute manual",
+                                 group_id=chat_id,
+                                 additional_data={
+                                     'original_reason': original_reason,
+                                     'originally_muted_by': muted_by,
+                                     'target_username': target_username
+                                 })
+        except Exception as e:
+            logger.warning(f"Error enviando log: {e}")
+
+        response = f"🔊 **USUARIO DESMUTEADO EXITOSAMENTE** 🔊\n\n"
+        response += f"👤 **Usuario:** {target_username}\n"
+        response += f"🆔 **ID:** `{target_user_id}`\n"
+        response += f"✅ **Estado:** Puede enviar mensajes nuevamente\n"
+        response += f"📝 **Razón original:** {original_reason}\n"
+        response += f"👮‍♂️ **Muteado originalmente por:** {muted_by}\n"
+        response += f"🔓 **Desmuteado por:** {update.effective_user.first_name}\n"
+        response += f"📅 **Fecha de desmute:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+        response += f"💡 **El mute ha sido removido manualmente**"
+
+        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+    except Exception as e:
+        logger.error(f"Error en comando unmute: {e}")
+        await update.message.reply_text(
+            "❌ **ERROR TEMPORAL**\n\n"
+            "Ha ocurrido un error interno. Por favor intenta nuevamente.\n\n"
+            "Si el problema persiste, contacta a los administradores.")
 
 
 @admin_only
 async def mutelist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver lista de usuarios muteados en el chat actual - Versión mejorada"""
-    chat_id = str(update.effective_chat.id)
+    """Ver lista de usuarios muteados en el chat actual - Versión corregida"""
+    try:
+        chat_id = str(update.effective_chat.id)
 
-    if chat_id not in muted_users or not muted_users[chat_id]:
-        await update.message.reply_text(
-            "✅ **NO HAY USUARIOS MUTEADOS** ✅\n\n"
-            "💡 Actualmente no hay usuarios muteados en este chat\n\n",
-            parse_mode=ParseMode.MARKDOWN)
-        return
+        if chat_id not in muted_users or not muted_users[chat_id]:
+            await update.message.reply_text(
+                "✅ **NO HAY USUARIOS MUTEADOS** ✅\n\n"
+                "💡 Actualmente no hay usuarios muteados en este chat\n\n"
+                "🔧 **Usar:** `/mute [user_id]` para mutear un usuario",
+                parse_mode=ParseMode.MARKDOWN)
+            return
 
-    response = f"🔇 **LISTA DE USUARIOS MUTEADOS** 🔇\n\n"
-    current_time = datetime.now()
+        response = f"🔇 **LISTA DE USUARIOS MUTEADOS** 🔇\n\n"
+        current_time = datetime.now()
 
-    muted_count = 0
-    expired_users = []
+        muted_count = 0
+        expired_users = []
 
-    for user_id, mute_data in muted_users[chat_id].items():
-        unmute_time = mute_data['unmute_time']
+        try:
+            for user_id, mute_data in muted_users[chat_id].items():
+                try:
+                    unmute_time = mute_data['unmute_time']
 
-        if current_time < unmute_time:  # Solo mostrar mutes activos
-            muted_count += 1
-            time_left = unmute_time - current_time
-            hours_left = int(time_left.total_seconds() // 3600)
-            minutes_left = int((time_left.total_seconds() % 3600) // 60)
+                    if current_time < unmute_time:  # Solo mostrar mutes activos
+                        muted_count += 1
+                        time_left = unmute_time - current_time
+                        hours_left = int(time_left.total_seconds() // 3600)
+                        minutes_left = int((time_left.total_seconds() % 3600) // 60)
 
-            # Intentar obtener nombre de usuario
-            try:
-                chat_member = await context.bot.get_chat_member(
-                    update.effective_chat.id, int(user_id))
-                username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
-            except:
-                username = f"Usuario {user_id}"
+                        # Intentar obtener nombre de usuario
+                        username = f"Usuario {user_id}"
+                        try:
+                            chat_member = await context.bot.get_chat_member(
+                                update.effective_chat.id, int(user_id))
+                            username = f"@{chat_member.user.username}" if chat_member.user.username else chat_member.user.first_name
+                        except Exception as e:
+                            logger.warning(f"No se pudo obtener info del usuario {user_id}: {e}")
 
-            response += f"👤 **{username}**\n"
-            response += f"🆔 **ID:** `{user_id}`\n"
-            response += f"⏰ **Tiempo restante:** {hours_left}h {minutes_left}m\n"
-            response += f"🔓 **Desmute automático:** {unmute_time.strftime('%d/%m %H:%M')}\n"
-            response += f"📝 **Razón:** {mute_data['reason']}\n"
-            response += f"👮‍♂️ **Muteado por:** {mute_data['muted_by']}\n"
-            response += f"🔧 **Desmute manual:** `/unmute {user_id}`\n"
-            response += f"─────────────────────────\n"
+                        response += f"👤 **{username}**\n"
+                        response += f"🆔 **ID:** `{user_id}`\n"
+                        response += f"⏰ **Tiempo restante:** {hours_left}h {minutes_left}m\n"
+                        response += f"🔓 **Desmute automático:** {unmute_time.strftime('%d/%m %H:%M')}\n"
+                        response += f"📝 **Razón:** {mute_data.get('reason', 'Sin razón')}\n"
+                        response += f"👮‍♂️ **Muteado por:** {mute_data.get('muted_by', 'Desconocido')}\n"
+                        response += f"🔧 **Desmute manual:** `/unmute {user_id}`\n"
+                        response += f"─────────────────────────\n"
+                    else:
+                        # Marcar para limpieza
+                        expired_users.append(user_id)
+                except Exception as e:
+                    logger.warning(f"Error procesando mute de usuario {user_id}: {e}")
+                    expired_users.append(user_id)
+
+        except Exception as e:
+            logger.error(f"Error iterando sobre usuarios muteados: {e}")
+
+        # Limpiar usuarios con mutes expirados
+        try:
+            for user_id in expired_users:
+                if user_id in muted_users[chat_id]:
+                    del muted_users[chat_id][user_id]
+
+            if not muted_users[chat_id]:
+                del muted_users[chat_id]
+        except Exception as e:
+            logger.warning(f"Error limpiando mutes expirados: {e}")
+
+        if muted_count == 0:
+            response = "✅ **NO HAY USUARIOS MUTEADOS ACTIVOS** ✅\n\n"
+            response += "💡 Todos los mutes han expirado automáticamente o no hay usuarios muteados\n\n"
+            response += "🔧 **Usar:** `/mute [user_id]` para mutear un usuario"
         else:
-            # Marcar para limpieza
-            expired_users.append(user_id)
+            response += f"\n📊 **Total usuarios muteados:** {muted_count}\n"
+            response += f"⏰ **Consultado:** {current_time.strftime('%d/%m/%Y %H:%M')}\n\n"
+            response += f"💡 **Los mutes expiran automáticamente**\n"
+            response += f"🔧 **Desmutear:** `/unmute [user_id]`"
 
-    # Limpiar usuarios con mutes expirados
-    for user_id in expired_users:
-        del muted_users[chat_id][user_id]
+        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
-    if not muted_users[chat_id]:
-        del muted_users[chat_id]
-
-    if muted_count == 0:
-        response = "✅ **NO HAY USUARIOS MUTEADOS ACTIVOS** ✅\n\n"
-        response += "💡 Todos los mutes han expirado automáticamente"
-    else:
-        response += f"\n📊 **Total usuarios muteados:** {muted_count}\n"
-        response += f"⏰ **Consultado:** {current_time.strftime('%d/%m/%Y %H:%M')}\n\n"
-        response += f"💡 **Los mutes expiran automáticamente**"
-
-    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        logger.error(f"Error en comando mutelist: {e}")
+        await update.message.reply_text(
+            "❌ **ERROR TEMPORAL**\n\n"
+            "Ha ocurrido un error interno. Por favor intenta nuevamente.\n\n"
+            "Si el problema persiste, contacta a los administradores.")
 
 
 @bot_admin_only
