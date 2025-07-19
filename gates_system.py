@@ -37,16 +37,23 @@ class GateSystem:
                 logger.info(f"Usuario {user_id} autorizado como MODERADOR")
                 return True
 
-            # Verificar si es premium activo - MEJORADO PARA SETPREMIUM
+            # Verificar si es premium activo - CORREGIDO PARA SETPREMIUM
             user_data = self.db.get_user(user_id)
             is_premium = user_data.get('premium', False)
             premium_until = user_data.get('premium_until')
+
+            logger.info(f"Verificando premium para {user_id}: premium={is_premium}, until={premium_until}")
 
             if is_premium:
                 # Si tiene premium_until, verificar si no ha expirado
                 if premium_until:
                     try:
-                        premium_until_date = datetime.fromisoformat(premium_until)
+                        # Asegurar compatibilidad con diferentes formatos de fecha
+                        if isinstance(premium_until, str):
+                            premium_until_date = datetime.fromisoformat(premium_until)
+                        else:
+                            premium_until_date = premium_until
+                        
                         if datetime.now() < premium_until_date:
                             logger.info(f"Usuario {user_id} tiene premium válido hasta {premium_until_date} - Acceso autorizado para GATES")
                             return True
@@ -57,10 +64,12 @@ class GateSystem:
                             return False
                     except Exception as date_error:
                         logger.error(f"Error parsing fecha premium para {user_id}: {date_error}")
-                        return False
+                        # Si hay error con la fecha pero tiene premium=True, autorizar
+                        logger.info(f"Autorizando usuario {user_id} por tener premium=True a pesar del error de fecha")
+                        return True
                 else:
-                    # Premium sin fecha de expiración (permanente)
-                    logger.info(f"Usuario {user_id} tiene premium permanente - Acceso autorizado para GATES")
+                    # Premium sin fecha de expiración (permanente) o setpremium sin fecha
+                    logger.info(f"Usuario {user_id} tiene premium sin fecha de expiración - Acceso autorizado para GATES")
                     return True
 
             # No es premium ni staff
@@ -711,10 +720,37 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_moderator = db.is_moderator(user_id)
     is_authorized = gate_system.is_authorized(user_id)
 
-    # Verificar premium - SIMPLIFICADO
+    # Verificar premium - MEJORADO PARA DEPURACIÓN
     user_data = db.get_user(user_id)
     is_premium = user_data.get('premium', False)
-    premium_valid = is_premium  # Si tiene flag premium, es válido
+    premium_until = user_data.get('premium_until')
+    
+    # Log detallado para depuración
+    logger.info(f"Gates command - Usuario {user_id}: premium={is_premium}, until={premium_until}")
+    
+    # Verificar si el premium es válido
+    premium_valid = False
+    if is_premium:
+        if premium_until:
+            try:
+                if isinstance(premium_until, str):
+                    premium_until_date = datetime.fromisoformat(premium_until)
+                else:
+                    premium_until_date = premium_until
+                
+                if datetime.now() < premium_until_date:
+                    premium_valid = True
+                    logger.info(f"Premium válido hasta {premium_until_date}")
+                else:
+                    logger.info(f"Premium expirado en {premium_until_date}")
+            except Exception as e:
+                logger.error(f"Error verificando fecha premium: {e}")
+                # Si hay error pero tiene premium=True, considerar válido
+                premium_valid = True
+        else:
+            # Premium sin fecha = permanente
+            premium_valid = True
+            logger.info(f"Premium permanente detectado")
 
     # Determinar tipo de usuario y acceso basado en roles de staff y premium
     if is_founder:
@@ -855,15 +891,20 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if query.data in gate_types:
         # VERIFICAR PERMISOS AL SELECCIONAR GATE
         is_authorized = gate_system.is_authorized(user_id)
+        
+        # Log detallado para depuración
+        user_data = db.get_user(user_id)
+        logger.info(f"Gate selection - Usuario {user_id}: authorized={is_authorized}, premium={user_data.get('premium', False)}")
 
         if not is_authorized:
-            user_data = db.get_user(user_id)
             premium_status = "✅ Premium activo" if user_data.get('premium', False) else "❌ No Premium"
+            premium_until = user_data.get('premium_until', 'Sin fecha')
 
             await query.edit_message_text(
                 "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
                 "💎 **¡Necesitas permisos especiales!**\n\n"
-                f"📊 **Tu estado actual:** {premium_status}\n\n"
+                f"📊 **Tu estado actual:** {premium_status}\n"
+                f"📅 **Premium hasta:** {premium_until}\n\n"
                 "🔐 **Acceso autorizado para:**\n"
                 "• 👑 Fundadores\n"
                 "• 💎 Co-fundadores\n"
@@ -875,7 +916,8 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 "• ✅ Procesamiento de múltiples tarjetas\n"
                 "• ✅ Soporte prioritario\n"
                 "• ✅ Control anti-rate limit\n\n"
-                "🎯 **Contacta a @SteveCHBll para más información**",
+                "🔧 **Si crees que esto es un error, contacta a los administradores**\n"
+                "🎯 **Para premium contacta: @SteveCHBll**",
                 parse_mode=ParseMode.MARKDOWN
             )
             return
