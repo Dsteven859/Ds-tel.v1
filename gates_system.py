@@ -25,30 +25,38 @@ class GateSystem:
         self.rate_limit_tracker = {}  # Control de rate limiting
 
     def is_authorized(self, user_id: str) -> bool:
-        """Verificar si el usuario tiene acceso usando SOLO la base de datos interna del bot"""
+        """Verificar si el usuario tiene acceso usando SOLO la base de datos interna del bot - TIEMPO REAL"""
         try:
+            # FORZAR ACTUALIZACIÓN DE LA BASE DE DATOS - Recargar datos frescos
+            self.db.load_data()  # Recarga la base de datos desde el archivo
+            
             # Verificar roles de staff usando las funciones de la base de datos
             if self.db.is_founder(user_id):
-                logger.info(f"Usuario {user_id} autorizado como FUNDADOR")
+                logger.info(f"[GATES] Usuario {user_id} autorizado como FUNDADOR")
                 return True
 
             if self.db.is_cofounder(user_id):
-                logger.info(f"Usuario {user_id} autorizado como CO-FUNDADOR")
+                logger.info(f"[GATES] Usuario {user_id} autorizado como CO-FUNDADOR")
                 return True
 
             if self.db.is_moderator(user_id):
-                logger.info(f"Usuario {user_id} autorizado como MODERADOR")
+                logger.info(f"[GATES] Usuario {user_id} autorizado como MODERADOR")
                 return True
 
-            # Verificar premium directamente desde la base de datos interna - IGUAL QUE /EX
+            # OBTENER DATOS FRESCOS DEL USUARIO - FORZAR LECTURA DE ARCHIVO
             user_data = self.db.get_user(user_id)
             is_premium = user_data.get('premium', False)
             premium_until = user_data.get('premium_until')
 
-            logger.info(f"[GATES] Verificando usuario {user_id}: premium={is_premium}, until={premium_until}")
+            logger.info(f"[GATES] VERIFICACIÓN EN TIEMPO REAL - Usuario {user_id}: premium={is_premium}, until={premium_until}")
 
-            # LÓGICA IDÉNTICA AL COMANDO /EX
-            if is_premium:
+            # SI premium=False EXPLÍCITAMENTE, DENEGAR INMEDIATAMENTE
+            if is_premium is False:
+                logger.info(f"[GATES] Usuario {user_id} - Premium EXPLÍCITAMENTE False - ACCESO DENEGADO ❌")
+                return False
+
+            # LÓGICA IDÉNTICA AL COMANDO /EX - Solo si premium=True
+            if is_premium is True:
                 if premium_until:
                     try:
                         # Parsear fecha de expiración
@@ -68,16 +76,21 @@ class GateSystem:
                             return False
                     except Exception as date_error:
                         logger.error(f"[GATES] Error fecha premium {user_id}: {date_error}")
-                        # En caso de error, si premium=True, autorizar por seguridad
-                        logger.info(f"[GATES] Usuario {user_id} - Premium=True, autorizando por error de fecha")
-                        return True
+                        # CAMBIO CRÍTICO: En caso de error de fecha, si premium=True, VERIFICAR MÁS ESTRICTAMENTE
+                        # Si no hay fecha válida, es premium permanente
+                        if premium_until is None:
+                            logger.info(f"[GATES] Usuario {user_id} - Premium permanente (sin fecha) ✅")
+                            return True
+                        else:
+                            logger.warning(f"[GATES] Usuario {user_id} - Error en fecha premium, DENEGANDO por seguridad ❌")
+                            return False
                 else:
                     # Premium=True sin fecha = premium permanente
-                    logger.info(f"[GATES] Usuario {user_id} - Premium permanente ✅")
+                    logger.info(f"[GATES] Usuario {user_id} - Premium permanente (sin until) ✅")
                     return True
 
             # Usuario sin premium ni staff
-            logger.info(f"[GATES] Usuario {user_id} - SIN ACCESO (premium={is_premium}, staff=False)")
+            logger.info(f"[GATES] Usuario {user_id} - SIN ACCESO (premium={is_premium}, staff=False) ❌")
             return False
 
         except Exception as e:
@@ -696,8 +709,9 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if gate_system is None:
         gate_system = GateSystem(current_db)
     else:
-        # Actualizar la referencia de la base de datos
+        # Actualizar la referencia de la base de datos Y FORZAR RECARGA
         gate_system.db = current_db
+        gate_system.db.load_data()  # FORZAR RECARGA DE DATOS FRESCOS
 
     user_id = str(update.effective_user.id)
 
@@ -826,6 +840,8 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     from telegram_bot import db as current_db
     if gate_system is not None:
         gate_system.db = current_db
+        # FORZAR RECARGA DE DATOS ANTES DE CADA CALLBACK
+        gate_system.db.load_data()
 
     await query.answer()
 
@@ -902,12 +918,13 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     }
 
     if query.data in gate_types:
-        # VERIFICAR PERMISOS AL SELECCIONAR GATE
+        # VERIFICAR PERMISOS AL SELECCIONAR GATE CON DATOS FRESCOS
+        gate_system.db.load_data()  # FORZAR RECARGA ANTES DE VERIFICAR
         is_authorized = gate_system.is_authorized(user_id)
         
-        # Log detallado para depuración
+        # Log detallado para depuración con datos frescos
         user_data = db.get_user(user_id)
-        logger.info(f"Gate selection - Usuario {user_id}: authorized={is_authorized}, premium={user_data.get('premium', False)}")
+        logger.info(f"[GATE CALLBACK] Usuario {user_id}: authorized={is_authorized}, premium={user_data.get('premium', False)}, until={user_data.get('premium_until', 'None')}")
 
         if not is_authorized:
             premium_status = "✅ Premium activo" if user_data.get('premium', False) else "❌ No Premium"
