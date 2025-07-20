@@ -4370,10 +4370,18 @@ async def setpremium_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             'credits': target_user_data['credits'] + 100  # Bonus de activación
         })
 
-        # Forzar guardado y verificar actualización inmediata
+        # Forzar guardado y recargar datos múltiples veces para asegurar sincronización
         db.save_data()
+        await asyncio.sleep(0.1)  # Pequeña pausa para asegurar escritura de archivo
+        db.load_data()  # Recargar desde archivo
         updated_data = db.get_user(target_user_id)
         logger.info(f"✅ Premium activado para {target_user_id}: premium={updated_data.get('premium')}, until={updated_data.get('premium_until')}")
+        
+        # FORZAR ACTUALIZACIÓN EN GATES SYSTEM SI EXISTE
+        if 'gate_system' in globals() and gate_system is not None:
+            gate_system.db.load_data()  # Forzar recarga en gates también
+            test_auth = gate_system.is_authorized(target_user_id)
+            logger.info(f"[SETPREMIUM] TEST INMEDIATO DESPUÉS DE RECARGA: Gates reconoce a {target_user_id} = {test_auth}")
         
         # Log específico para gates - VERIFICACIÓN INMEDIATA
         logger.info(f"[SETPREMIUM] Usuario {target_user_id} configurado con premium={updated_data.get('premium')} - GATES debería reconocerlo INMEDIATAMENTE")
@@ -4424,10 +4432,18 @@ async def setpremium_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             'premium_until': None
         })
 
-        # Forzar guardado y verificar desactivación inmediata
+        # Forzar guardado y recargar datos múltiples veces para asegurar sincronización
         db.save_data()
+        await asyncio.sleep(0.1)  # Pequeña pausa para asegurar escritura de archivo
+        db.load_data()  # Recargar desde archivo
         updated_data = db.get_user(target_user_id)
         logger.info(f"❌ Premium desactivado para {target_user_id}: premium={updated_data.get('premium')}, until={updated_data.get('premium_until')}")
+        
+        # FORZAR ACTUALIZACIÓN EN GATES SYSTEM SI EXISTE
+        if 'gate_system' in globals() and gate_system is not None:
+            gate_system.db.load_data()  # Forzar recarga en gates también
+            test_auth = gate_system.is_authorized(target_user_id)
+            logger.info(f"[SETPREMIUM] TEST INMEDIATO DESPUÉS DE RECARGA: Gates bloquea a {target_user_id} = {not test_auth}")
         
         # Log específico para gates - VERIFICACIÓN INMEDIATA
         logger.info(f"[SETPREMIUM] Usuario {target_user_id} configurado sin premium - GATES debe bloquearlo INMEDIATAMENTE")
