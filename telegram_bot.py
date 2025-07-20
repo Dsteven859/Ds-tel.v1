@@ -4517,7 +4517,6 @@ async def setpremium_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
-@admin_only
 
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver información detallada de usuario por ID"""
