@@ -9,15 +9,18 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from telegram.error import RetryAfter, TimedOut
 
-# Importar db del módulo principal
-from telegram_bot import db
-
 # Configurar logger específico para gates
 logger = logging.getLogger(__name__)
 
+# La instancia db se pasará al constructor
+db = None
+
 class GateSystem:
-    def __init__(self, db):
-        self.db = db
+    def __init__(self, database_instance):
+        self.db = database_instance
+        # Actualizar la referencia global para compatibilidad
+        global db
+        db = database_instance
         self.active_sessions = {}  # Sesiones activas de gates
         self.rate_limit_tracker = {}  # Control de rate limiting
 
@@ -688,8 +691,13 @@ gate_system = None
 async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando principal /gates - Todos pueden ver, solo premium/fundadores pueden usar"""
     global gate_system
+    # Importar db aquí para asegurar que tenemos la instancia actual
+    from telegram_bot import db as current_db
     if gate_system is None:
-        gate_system = GateSystem(db)
+        gate_system = GateSystem(current_db)
+    else:
+        # Actualizar la referencia de la base de datos
+        gate_system.db = current_db
 
     user_id = str(update.effective_user.id)
 
@@ -813,6 +821,11 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     global gate_system
     query = update.callback_query
     user_id = str(query.from_user.id)
+
+    # Importar db aquí para asegurar que tenemos la instancia actual
+    from telegram_bot import db as current_db
+    if gate_system is not None:
+        gate_system.db = current_db
 
     await query.answer()
 
@@ -957,6 +970,11 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Procesar múltiples tarjetas enviadas cuando hay sesión activa - CON CONTROL DE RATE LIMITING"""
     global gate_system
     user_id = str(update.effective_user.id)
+
+    # Importar db aquí para asegurar que tenemos la instancia actual
+    from telegram_bot import db as current_db
+    if gate_system is not None:
+        gate_system.db = current_db
 
     # Verificar si hay sesión activa primero
     if user_id not in gate_system.active_sessions:
