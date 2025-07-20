@@ -4370,9 +4370,20 @@ async def setpremium_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             'credits': target_user_data['credits'] + 100  # Bonus de activación
         })
 
-        # Log para verificar que se actualizó correctamente
+        # Forzar guardado y verificar actualización inmediata
+        db.save_data()
         updated_data = db.get_user(target_user_id)
-        logger.info(f"Premium actualizado para {target_user_id}: premium={updated_data.get('premium')}, until={updated_data.get('premium_until')}")
+        logger.info(f"✅ Premium activado para {target_user_id}: premium={updated_data.get('premium')}, until={updated_data.get('premium_until')}")
+        
+        # Log específico para gates - VERIFICACIÓN INMEDIATA
+        logger.info(f"[SETPREMIUM] Usuario {target_user_id} configurado con premium={updated_data.get('premium')} - GATES debería reconocerlo INMEDIATAMENTE")
+        
+        # Verificar que gates reconocería al usuario ahora mismo
+        if 'gate_system' in globals() and gate_system is not None:
+            test_auth = gate_system.is_authorized(target_user_id)
+            logger.info(f"[SETPREMIUM] TEST INMEDIATO: Gates reconoce a {target_user_id} = {test_auth}")
+        else:
+            logger.info(f"[SETPREMIUM] Gate system no inicializado aún, pero debería funcionar cuando se use /gates")
 
         # Obtener info del usuario si es posible
         try:
@@ -4413,9 +4424,20 @@ async def setpremium_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             'premium_until': None
         })
 
-        # Log para verificar que se desactivó correctamente
+        # Forzar guardado y verificar desactivación inmediata
+        db.save_data()
         updated_data = db.get_user(target_user_id)
-        logger.info(f"Premium desactivado para {target_user_id}: premium={updated_data.get('premium')}, until={updated_data.get('premium_until')}")
+        logger.info(f"❌ Premium desactivado para {target_user_id}: premium={updated_data.get('premium')}, until={updated_data.get('premium_until')}")
+        
+        # Log específico para gates - VERIFICACIÓN INMEDIATA
+        logger.info(f"[SETPREMIUM] Usuario {target_user_id} configurado sin premium - GATES debe bloquearlo INMEDIATAMENTE")
+        
+        # Verificar que gates bloquearía al usuario ahora mismo
+        if 'gate_system' in globals() and gate_system is not None:
+            test_auth = gate_system.is_authorized(target_user_id)
+            logger.info(f"[SETPREMIUM] TEST INMEDIATO: Gates bloquea a {target_user_id} = {not test_auth}")
+        else:
+            logger.info(f"[SETPREMIUM] Gate system no inicializado aún, pero debería bloquear cuando se use /gates")
 
         # Obtener info del usuario si es posible
         try:
