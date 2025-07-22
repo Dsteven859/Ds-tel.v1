@@ -1231,7 +1231,7 @@ db = Database()
 class CardGenerator:
 
     @staticmethod
-    def generate_cards(bin_number: str, count: int = 10) -> List[str]:
+    def generate_cards(bin_number: str, count: int = 15) -> List[str]:
         """Genera tarjetas basadas en un BIN"""
         cards = []
 
@@ -1257,7 +1257,7 @@ class CardGenerator:
 
     @staticmethod
     def generate_cards_advanced(bin_number: str,
-                                count: int = 10,
+                                count: int = 15,
                                 card_length: int = 16,
                                 cvv_length: int = 3) -> List[str]:
         """Genera tarjetas con soporte para diferentes longitudes (Visa, MasterCard, AmEx)"""
@@ -1292,7 +1292,7 @@ class CardGenerator:
 
     @staticmethod
     def generate_cards_custom_advanced(bin_number: str,
-                                       count: int = 10,
+                                       count: int = 15,
                                        preset_month=None,
                                        preset_year=None,
                                        preset_cvv=None,
@@ -1373,7 +1373,7 @@ class CardGenerator:
 
     @staticmethod
     def generate_cards_custom(bin_number: str,
-                              count: int = 10,
+                              count: int = 15,
                               preset_month=None,
                               preset_year=None,
                               preset_cvv=None) -> List[str]:
@@ -1616,24 +1616,48 @@ def group_only(func):
 
         # Verificar si es un chat grupal
         if update.effective_chat.type in ['private']:
-            # Verificar si el usuario tiene privilegios especiales
-            is_founder = user_id in FOUNDER_IDS
-            is_cofounder = user_id in COFOUNDER_IDS
+            # Verificar si el usuario tiene privilegios especiales para usar en privado
             is_admin = user_id in ADMIN_IDS
+            
+            # Verificar roles de staff en base de datos
+            is_founder = db.is_founder(user_id_str)
+            is_cofounder = db.is_cofounder(user_id_str)
+            is_moderator = db.is_moderator(user_id_str)
 
             # Verificar si es premium
             user_data = db.get_user(user_id_str)
             is_premium = user_data.get('premium', False)
+            
+            # Verificar que el premium sea válido (no expirado)
+            premium_valid = False
+            if is_premium:
+                premium_until = user_data.get('premium_until')
+                if premium_until:
+                    try:
+                        premium_until_date = datetime.fromisoformat(premium_until)
+                        premium_valid = datetime.now() < premium_until_date
+                    except:
+                        premium_valid = True  # Si hay error en fecha, considerar válido
+                else:
+                    premium_valid = True  # Premium sin fecha = permanente
 
-            # Si no tiene privilegios, denegar acceso
-            if not (is_founder or is_cofounder or is_admin or is_premium):
+            # Si no tiene privilegios suficientes, denegar acceso
+            if not (is_admin or is_founder or is_cofounder or is_moderator or premium_valid):
+                # Determinar qué acceso tiene el usuario
+                access_type = "Usuario estándar"
+                if is_premium and not premium_valid:
+                    access_type = "Premium expirado"
+                
                 await update.message.reply_text(
-                    "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
-                    "❌ **No tienes privilegios para verificar tarjetas en chat privado**\n\n"
-                    "🔹 **Este comando solo funciona en grupos**\n"
-                    "🔹 **Únete al grupo oficial del bot**\n"
-                    "🔹 **Contacta a los administradores para más información**\n\n"
-                    "💡 **Tip:** Usa el bot desde el grupo oficial",
+                    "╒═📛 BLOQUEO DE ACCESO ═╕\n"
+                    "│ 🔒 Canal: Privado cerrado\n"
+                    f"│ 💠 Estado: {access_type}\n"
+                    "│ \n"
+                    "│ 🧭 Soluciones:\n"
+                    "│ ├ Usa el comando en grupo\n"
+                    "│ └ Reactiva tu acceso premium\n"
+                    "╘════════════════════════╛\n"
+                    "📡 Nodo de contacto: @SteveCHRB",
                     parse_mode=ParseMode.MARKDOWN)
                 return
 
@@ -1661,7 +1685,7 @@ def require_credits_for_live(credits_needed: int = 3):
                     f"❌ **Créditos insuficientes**\n\n"
                     f"Necesitas: {credits_needed} créditos\n"
                     f"Tienes: {user_data['credits']} créditos\n\n"
-                    f"Usa /bonus para créditos gratis o /infocredits para más información",
+                    f"Usa /loot para créditos gratis o /audit para más información",
                     parse_mode=ParseMode.MARKDOWN)
                 return
 
@@ -2060,39 +2084,37 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = db.get_user(user_id)
     is_admin = update.effective_user.id in ADMIN_IDS
 
-    welcome_text = "╔═══════════════════════════════╗\n"
-    welcome_text += "║  🔥 CHERNOBIL CHLV 🔥  ║\n"
-    welcome_text += "╚═══════════════════════════════╝\n\n"
-    welcome_text += f"👋 ¡Bienvenid@ {update.effective_user.first_name}!\n\n"
-    welcome_text += f"💳 Créditos: {user_data['credits'] if not is_admin else '∞ (Admin)'}\n"
+    # Determinar estado premium
+    premium_status = "ACTIVO" if user_data.get('premium', False) else "INACTIVO"
+    credits_display = user_data['credits'] if not is_admin else '∞'
 
-    if user_data['premium']:
-        welcome_text += "👑 PREMIUM ACTIVO\n"
+    welcome_text = f"╔═⟦ 🧬 BIENVENID@ {update.effective_user.first_name} - PANEL CHLV ⟧═╗\n"
+    welcome_text += f"║ 💳 Créditos actuales: {credits_display}\n"
+    welcome_text += f"║ 👑 Modo PREMIUM: {premium_status}\n"
+    welcome_text += "╚═════════════════════════════════╝\n\n"
 
-    welcome_text += "\n┌─────────────────────────────┐\n"
-    welcome_text += "│    🎯 FUNCIONES PRINCIPALES    │\n"
-    welcome_text += "├─────────────────────────────┤\n"
-    welcome_text += "│ 🔸 /gen - Generar tarjetas   │\n"
-    welcome_text += "│ 🔸 /live - Verificar CCs      │\n"
-    welcome_text += "│ 🔸 /direccion - Direcciones   │\n"
-    welcome_text += "│ 🔸 /ex - Extrapolación       │\n"
-    welcome_text += "└─────────────────────────────┘\n\n"
-    welcome_text += "┌─────────────────────────────┐\n"
-    welcome_text += "│      💰 SISTEMA DE CREDITOS     │\n"
-    welcome_text += "├─────────────────────────────┤\n"
-    welcome_text += "│ 🔸 /credits - Ver créditos    │\n"
-    welcome_text += "│ 🔸 /bonus - Bono diario       │\n"
-    welcome_text += "│ 🔸 /infocredits - Info costos │\n"
-    welcome_text += "│ 🔸 /donate - Donar créditos   │\n"
-    welcome_text += "└─────────────────────────────┘\n\n"
-    welcome_text += "┌─────────────────────────────┐\n"
-    welcome_text += "│        ℹ️ INFORMACION         │\n"
-    welcome_text += "├─────────────────────────────┤\n"
-    welcome_text += "│ 🔸 /status - Estado del bot   │\n"
-    welcome_text += "│ 🔸 /pasarela - Info pasarelas │\n"
-    welcome_text += "│ 🔸 /juegos - Juegos de suerte │\n"
-    welcome_text += "│ 🔸 /staff list - Lista staff  │\n"
-    welcome_text += "└─────────────────────────────┘\n\n"
+    welcome_text += "┌─⟦ ⚙️ COMANDOS PRINCIPALES ⟧─┐\n"
+    welcome_text += "│ • /gen → Generar tarjetas\n"
+    welcome_text += "│ • /inject → Verificar tarjetas\n"
+    welcome_text += "│ • /direccion → Generar dirección\n"
+    welcome_text += "│ • /ex → Extrapolación avanzada\n"
+    welcome_text += "└──────────────────────────────┘\n\n"
+
+    welcome_text += "┌─⟦ 💰 SISTEMA DE CRÉDITOS ⟧─┐\n"
+    welcome_text += "│ • /wallet → Ver saldo\n"
+    welcome_text += "│ • /loot → Recompensa diaria\n"
+    welcome_text += "│ • /transmit → Donar \n"
+    welcome_text += "│ • /audit → Tabla WED\n"
+    welcome_text += "└──────────────────────────────┘\n\n"
+
+    welcome_text += "┌─⟦ 🛰️ FUNCIONES INTELIGENTES ⟧─┐\n"
+    welcome_text += "│ • /bridge [URL] → Escaneo bridge\n"
+    welcome_text += "│ • /status → Estado del sistema\n"
+    welcome_text += "│ • /staff list → Administración\n"
+    welcome_text += "│ • /simulator → simulator riesgoso\n"
+    welcome_text += "└──────────────────────────────┘\n\n"
+
+    welcome_text += "💡 Tip: Usa /loot todos los días para aumentar tu saldo CHLV.\n\n"
     welcome_text += "🤖 Bot: @ChernobilChLv_bot"
 
     await update.message.reply_text(welcome_text)
@@ -2108,10 +2130,14 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
         await update.message.reply_text(
-            "『⛧⛧⛧』⟪ 𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩 ⟫『⛧⛧⛧』\n"
-            "CC Generator ♻️\n\n"
-            "**Formato:**\n"
-            "• `/gen 55791004431xxxxxx|08|27|123`\n",
+            "🕷️ **𝗦𝗬𝗡𝗖 𝗚𝗘𝗡 | 𝗠𝗢𝗗𝗢 𝗙𝗢𝗥𝗝𝗔𝗗𝗢𝗥**\n\n"
+            "╭────────────────────────────╮\n"
+            "┃ 🧾 **Formato:** 55791004431xxxxxx|08|27|123\n"
+            "┃ 📤 **Comando:** /gen BIN|MM|YY|CVV\n"
+            "┃ 💠 **Variables:** \"x\" genera números aleatorios\n"
+            "┃ 🎯 **Por defecto:** 15 tarjetas\n"
+            "╰────────────────────────────╯\n\n"
+            "⛓️ **Usa BINs activos para mejores resultados**",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -2226,7 +2252,7 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cvv_length = 4
 
     # Parámetros adicionales desde argumentos
-    count = 10  # Por defecto
+    count = 15  # Por defecto (cambiado de 10 a 15)
     if len(args) > 1:
         for arg in args[1:]:
             if arg.isdigit() and 1 <= int(arg) <= 50:
@@ -2263,13 +2289,15 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Mostrar formato usado
     format_display = f"{preset_month or 'rnd'} | {preset_year or 'rnd'} | {preset_cvv or 'rnd'}"
 
-    # RESPUESTA MEJORADA
-    response = f"BIN: {bin_mask} | {format_display}\n"
-    response += f"═══════════════════════════\n"
-    response += f"        『⛧⛧⛧』⟪ 𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩 ⟫『⛧⛧⛧』\n"
-    response += f"                     \n"
+    # NUEVA RESPUESTA CON FORMATO GLITCH_FRAME_X
+    response = f"🟣 SYSTEM ALERT [GLITCH_FRAME_X]\n"
+    response += f"---=:: BIN Parse Protocol Init =---\n"
+    response += f"▌ ID: {bin_mask}\n"
+    response += f"▌ Format: {format_display}\n\n"
+    response += f"▌ Sending Payload...\n"
+
     for card in cards:
-        response += f"{card}\n"
+        response += f"▒ {card}\n"
 
     # Información del BIN con banderas completas
     country_flags = {
@@ -2296,14 +2324,13 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Tiempo de generación
     generation_time = round(random.uniform(0.025, 0.055), 3)
 
-    response += f"\n═════════ DETAILS ══════════\n"
-    response += f"💳 Bin Information:\n"
-    response += f"🏦 Bank: {real_bin_info['bank']}\n"
-    response += f"💼 Type: {real_bin_info['scheme']} - {real_bin_info['type']} - {real_bin_info['level']}\n"
-    response += f"🌍 Country: {real_bin_info['country']} {country_flag}\n"
-    response += f"⏱️ Time Spent: {generation_time}s\n"
-    response += f"👤 Generated By: @{update.effective_user.username or update.effective_user.first_name}\n"
-    response += f"╚═══════𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩═══════╝"
+    response += f"\n---= META DATA =---\n"
+    response += f"🏦 Banco: {real_bin_info['bank']}\n"
+    response += f"💳 Tipo: {real_bin_info['scheme']} / {real_bin_info['type']}\n"
+    response += f"🌍 Región: {country_flag} {real_bin_info['country'].upper()}\n"
+    response += f"🧠 Usuario: @{update.effective_user.username or update.effective_user.first_name}\n"
+    response += f"⏱️ Tiempo: {generation_time}s\n"
+    response += f"🟢 *Estado: ESTABLE"
 
     # BOTÓN REGENERAR CORREGIDO - Mantiene parámetros originales
     regen_data = f"regen_{bin_number}_{count}_{preset_month or 'rnd'}_{preset_year or 'rnd'}_{preset_cvv or 'rnd'}_{card_length}_{cvv_length}"
@@ -2323,29 +2350,71 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def credits_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver créditos del usuario"""
+    """Ver créditos del usuario con diseño mejorado"""
     user_id = str(update.effective_user.id)
     user_data = db.get_user(user_id)
+    is_admin = update.effective_user.id in ADMIN_IDS
 
-    premium_text = ""
-    if user_data['premium']:
+    # Determinar estado premium
+    premium_status = "❌ INACTIVO"
+    premium_details = ""
+    if user_data.get('premium', False):
         premium_until = datetime.fromisoformat(user_data['premium_until'])
         days_left = (premium_until - datetime.now()).days
-        premium_text = f"\n👑 **PREMIUM ACTIVO** ({days_left} días restantes)"
+        premium_status = "✅ ACTIVO"
+        premium_details = f"⏳ Expira en: {days_left} días"
 
-    response = f"💰 **TUS CRÉDITOS** 💰\n\n"
-    response += f"💎 **Créditos disponibles:** {user_data['credits']}\n"
-    response += f"📊 **Tarjetas generadas:** {user_data['total_generated']}\n"
-    response += f"🔍 **Tarjetas verificadas:** {user_data['total_checked']}\n"
-    response += premium_text
-    response += f"\n\n💡 Usa `/bonus` para créditos gratis diarios"
+    # Calcular actividad total
+    total_activity = user_data['total_generated'] + user_data['total_checked']
+
+    # Mostrar créditos (infinitos para admins)
+    credits_display = f"{user_data['credits']:,}" if not is_admin else "∞ (Admin)"
+
+    response = "╔═══▣ DATA NODE ACCESSED ▣═══╗\n"
+    response += "║                            \n"
+    response += f"║ 💰 Créditos disponibles: {credits_display:<7}\n"
+    response += f"║ 📤 Tarjetas generadas: {user_data['total_generated']:<9,}\n"
+    response += f"║ 📥 Tarjetas validadas: {user_data['total_checked']:<9,}\n"
+    response += "║                            \n"
+    response += f"║ 🎖️ Estado Premium: {premium_status:<12}\n"
+    if premium_details:
+        response += f"║ {premium_details:<27}\n"
+    response += "║                            \n"
+    response += f"║ ⚡ Actividad total: {total_activity:<11,}\n"
+
+    # Tiempo en el bot
+    join_date = datetime.fromisoformat(user_data['join_date'])
+    days_active = (datetime.now() - join_date).days
+    response += f"║ 📅 Días activo: {days_active:<15}\n"
+
+    response += "║                            \n"
+    response += "║ 💡 Tip: Canjea energía    \n"
+    response += "║     con /loot diario      \n"
+    response += "╚══════════════════════════╝\n\n"
+
+    # Barra de progreso para créditos (solo para no-admins)
+    if not is_admin:
+        credit_level = min(user_data['credits'] // 10, 10)  # Max 10 barras
+        progress_bar = "█" * credit_level + "░" * (10 - credit_level)
+        response += f"🔋 **Nivel de Energía:** [{progress_bar}] {user_data['credits']}/100+\n\n"
+
+    # Comandos de acceso rápido
+    response += "⚡ **ACCIONES RÁPIDAS:**\n"
+    response += "┌─────────────────────────────┐\n"
+    response += "│ `/loot` - Recompensa diaria │\n"
+    response += "│ `/simulator` - Casino de riesgo │\n"
+    response += "│ `/transmit` - Transferir CR    │\n"
+    response += "└─────────────────────────────┘\n\n"
+
+    response += f"🤖 **Usuario:** @{update.effective_user.username or update.effective_user.first_name}\n"
+    response += f"📡 **Nodo:** "
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
 
 @check_maintenance
 @group_only
-@require_credits_for_live(3)
+@require_credits_for_live(4)
 async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Verificar tarjetas en vivo - Cuesta 3 créditos"""
     user_id = str(update.effective_user.id)
@@ -2354,12 +2423,13 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
     if not args:
-        response = "『⛧⛧⛧』⟪ 𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩 ⟫『⛧⛧⛧』\n\n"
-        response += "⚜️ **༺ 𝗩𝗘𝗥𝗜𝗙𝗬 𝗟𝗜𝗩𝗘 ༻** ⚜️\n\n"
-        response += "📟 **Uso:** `/live [tarjetas]`\n"
-        response += "📑 **Formato:** `4532xxxxxxxx1234|12|2025|123`\n\n"
-        response += "🔰 **Capacidad:** Hasta 10 tarjetas por comando\n"
-        response += "💰 **Costo:** 3 créditos por verificación\n"
+        response = "🔍 **LSCAN | 𝗠𝗢𝗗𝗢 𝗔𝗡𝗔𝗟𝗜𝗧𝗜𝗖𝗢**\n\n"
+        response += "╭───────────────╮\n"
+        response += "┃ 🧾 **Formato:** 4532xxxxxxxx1234|12|2025|123\n"
+        response += "┃ 📦 **Límite:** 15 tarjetas por envío\n"
+        response += "┃ 💸 **Costo:** 4 créditos por chequeo\n"
+        response += "╰───────────────╯\n\n"
+        response += "⛓️ **𝗨𝘀𝗲 𝗕𝗜𝗡𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗲𝘀 𝗽𝗮𝗿𝗮 𝗺𝗲𝗷𝗼𝗿𝗮𝗿 𝗲𝗹 𝗿𝗲𝘀𝘂𝗹𝘁𝗮𝗱𝗼.**\n"
 
         await update.message.reply_text(response,
                                         parse_mode=ParseMode.MARKDOWN)
@@ -2387,8 +2457,8 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN)
         return
 
-    # Limitar a 10 tarjetas máximo
-    cards_list = cards_list[:10]
+    # Limitar a 15 tarjetas máximo
+    cards_list = cards_list[:15]
     total_cards = len(cards_list)
 
     # Sistema de APIs con pesos de efectividad - MEJORADO
@@ -2446,9 +2516,11 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Mensaje inicial unificado que funciona para 1 o múltiples tarjetas
     progress_msg = await update.message.reply_text(
-        "⊚ CHERNOBIL VERIFICANDO.. ⊚\n\n"
-        f"💳 Procesando {total_cards} tarjeta{'s' if total_cards > 1 else ''}...\n"
-        f"{methods_text}...")
+        "⧗ [⧉ CHLV_VERIFICATION ACTIVE ⧉]\n\n"
+        f"⏳ Progreso: [████░░░░░░] 40%\n"
+        f"💳 Procesando tarjeta: 2 de {total_cards}\n\n"
+        f"> Módulo: inject vX.2\n"
+        f"> Estado: En curso...")
 
     results = []
 
@@ -2459,13 +2531,14 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 progress = (card_index + 1) / total_cards * 100
                 progress_bar = "█" * int(
                     progress // 10) + "░" * (10 - int(progress // 10))
-                progress_text = f"📊 Progreso: [{progress_bar}] {progress:.0f}%\n💳 Tarjeta {card_index + 1}/{total_cards}"
+                progress_text = f"⏳ Progreso: [{progress_bar}] {progress:.0f}%\n💳 Procesando tarjeta: {card_index + 1} de {total_cards}"
             else:
-                progress_text = f"💳 Verificando tarjeta única..."
+                progress_text = f"⏳ Progreso: [████░░░░░░] 40%\n💳 Procesando tarjeta: 1 de 1"
 
-            await progress_msg.edit_text(f"⊚ **CHERNOBIL VERIFICANDO..** ⊚\n\n"
-                                         f"{progress_text}\n"
-                                         f"{methods_text}...")
+            await progress_msg.edit_text(f"⧗ [⧉ CHLV_VERIFICATION ACTIVE ⧉]\n\n"
+                                         f"{progress_text}\n\n"
+                                         f"> Módulo: inject vX.2\n"
+                                         f"> Estado: En curso...")
         except:
             pass
 
@@ -2524,74 +2597,48 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             datetime.now().strftime('%H:%M:%S')
         })
 
-    # Construir respuesta final con formato mejorado
+    # Construir respuesta final con formato MULTI-BREACH DETECTED
     final_response = ""
 
-    # Si es UNA SOLA tarjeta, usar formato detallado
-    if total_cards == 1:
-        result = results[0]
-        bin_info = result['bin_info']
+    # Nuevo formato MULTI-BREACH para todas las tarjetas
+    final_response += "┌──── MULTI-BREACH DETECTED ▒▒▒\n"
+    final_response += f"│ SYSTEM LOGS: {total_cards}/15\n"
 
-        # Obtener bandera del país
-        country_flags = {
-            'UNITED STATES': '🇺🇸',
-            'CANADA': '🇨🇦',
-            'UNITED KINGDOM': '🇬🇧',
-            'GERMANY': '🇩🇪',
-            'FRANCE': '🇫🇷',
-            'SPAIN': '🇪🇸',
-            'ITALY': '🇮🇹',
-            'BRAZIL': '🇧🇷',
-            'MEXICO': '🇲🇽',
-            'ARGENTINA': '🇦🇷',
-            'COLOMBIA': '🇨🇴',
-            'PERU': '🇵🇪',
-            'CHILE': '🇨🇱',
-            'ECUADOR': '🇪🇨',
-            'VENEZUELA': '🇻🇪'
+    # Procesar cada tarjeta con el nuevo formato
+    for i, result in enumerate(results, 1):
+        # Determinar el resultado del nodo
+        if result['is_live']:
+            node_result = "✅ ACCESS OK"
+        else:
+            node_result = "❌ DENIED — PROTOCOL_TRIPPED"
+
+        # Mapear nombres de API a formato Z-
+        api_mapping = {
+            "Stripe Ultra Pro": "Z-Stripe Ultra Pro",
+            "PayPal Pro": "Z-PayPal Pro", 
+            "Braintree Pro": "Z-Braintree Pro",
+            "Authorize.net": "Z-Authorize Pro",
+            "Square": "Z-Square Pro",
+            "Adyen Pro": "Z-Adyen Pro",
+            "Worldpay": "Z-Worldpay Pro",
+            "CyberSource AI": "Z-CyberSource AI"
         }
 
-        country_name = bin_info['country'].upper()
-        country_flag = country_flags.get(country_name, '🌍')
+        node_name = api_mapping.get(result['api'], f"Z-{result['api']}")
 
-        # Formato detallado para UNA tarjeta
-        final_response += "『⛧⛧⛧』⟪ 𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩 ⟫『⛧⛧⛧』\n\n"
-        final_response += f"[𖤍] 𝗖𝗮𝗿𝗱 ⊱ {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
-        final_response += f"[𖤍] 𝗦𝘁𝗮𝘁𝘂𝘀 ⊱ {result['status']}\n"
-        final_response += f"[𖤍] 𝗥𝗲𝘀𝘂𝗹𝘁 ⊱ {result['result']}\n"
-        final_response += f"[𖤍] 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 ⊱ {result['api']} 🛰️\n"
-        final_response += f"══════════ 𝗗𝗘𝗧𝗔𝗜𝗟𝗦 ══════════\n"
-        final_response += f"[𖤍] 𝗕𝗜𝗡 ⊱ {result['parts'][0][:6]}xxxxxx\n"
-        final_response += f"[𖤍] 𝗕𝗮𝗻𝗸 ⊱ {bin_info['bank']}\n"
-        final_response += f"[𖤍] 𝗦𝗰𝗵𝗲𝗺𝗲 ⊱ {bin_info['scheme']} | {bin_info['type']}\n"
-        final_response += f"[𖤍] 𝗖𝗼𝘂𝗻𝘁𝗿𝘆 ⊱ {bin_info['country']} {country_flag} - 💲USD\n"
-        final_response += f"══════════ 𝗜𝗡𝗙𝗢 ══════════\n"
-        final_response += f"[𖤍] 𝗧𝗶𝗺𝗲 ⊱ {datetime.now().strftime('%H:%M:%S')} ⌛\n"
-        final_response += f"[𖤍] 𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗕𝘆 ⊱ @{update.effective_user.username or update.effective_user.first_name} 👤\n"
-        final_response += f"[𖤍] 𝗕𝗼𝘁 ⊱ @ChernobilChLv_bot 𖠑"
+        final_response += f"├── ARCHIVE[{i:02d}]\n"
+        final_response += f"│ ↳ ID: {result['card_data']}\n"
+        final_response += f"│ ↳ NODE: {node_name}\n"
+        final_response += f"│ ↳ RESULT: {node_result}\n"
+        final_response += f"│ ↳ SIG: @{update.effective_user.username or update.effective_user.first_name}\n"
 
-    else:
-        # Formato compacto para múltiples tarjetas
-        final_response += "『⛧⛧⛧』⟪ 𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩 ⟫『⛧⛧⛧』\n\n"
-
-        # Resultados de cada tarjeta
-        for result in results:
-            final_response += f"[{result['index']}] {result['parts'][0]}|{result['parts'][1]}|{result['parts'][2]}|{result['parts'][3]}\n"
-            final_response += f"[𖤍] Status ⊱ {result['status']}\n"
-            final_response += f"[𖤍] Result ⊱ {result['result']}\n"
-            final_response += f"[𖤍] Gateway ⊱ {result['api']} 🛰️\n"
-            final_response += f"[𖤍] Time ⊱ {datetime.now().strftime('%H:%M:%S')} ⌛\n"
-            final_response += f"[𖤍] Checked by ⊱ @{update.effective_user.username or update.effective_user.first_name} 👤\n"
-            final_response += f"[𖤍] Bot ⊱ @ChernobilChLv_bot 𖠑\n"
-
-            # Separador solo si hay más tarjetas
-            if result['index'] < len(results):
-                final_response += "\n"
-
-        # Estadísticas finales para múltiples tarjetas
-        live_count = sum(1 for r in results if r['is_live'])
-        final_response += f"\n🔥 Resultado: {live_count}/{total_cards} LIVE\n"
-        final_response += f"⚡ Efectividad: {(live_count/total_cards)*100:.1f}%"
+    # Estadísticas finales
+    live_count = sum(1 for r in results if r['is_live'])
+    final_response += f"│\n"
+    final_response += f"└── BREACH SUMMARY: {live_count}/{total_cards} NODES COMPROMISED\n"
+    final_response += f"    ▒ SUCCESS RATE: {(live_count/total_cards)*100:.1f}%\n"
+    final_response += f"    ▒ TIMESTAMP: {datetime.now().strftime('%H:%M:%S')}\n"
+    final_response += f"    ▒ OPERATOR: @{update.effective_user.username or update.effective_user.first_name}"
 
     # Actualizar estadísticas del usuario
     db.update_user(
@@ -2685,20 +2732,15 @@ async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not (is_admin or is_founder or is_cofounder or is_moderator
             or is_premium):
         await update.message.reply_text(
-            "╔═════════════════════════════╗\n"
-            "║  🔒 **ACCESO RESTRINGIDO** 🔒  ║\n"
-            "╚═════════════════════════════╝\n\n"
-            "👑 **Este comando es EXCLUSIVO para:**\n"
-            "• 💎 Usuarios con membresía PREMIUM\n\n"
-            "🚫 **Tu cuenta:** Usuario estándar\n"
-            "💡 **Para acceder necesitas:**\n\n"
-            "💎 **Beneficios premium:**\n"
-            "• ✅ Extrapolación avanzada ilimitada\n"
-            "• ✅ Algoritmos de IA únicos\n"
-            "• ✅ Mayor efectividad ALTA\n"
-            "• ✅ Reconoce múltiples formatos\n"
-            "• ✅ Créditos adicionales\n\n"
-            "💰 **Consultar precios:** @SteveCHRB",
+            "╒═📛 BLOQUEO DE ACCESO ═╕\n"
+            "│ 🔒 Canal: Extrapolación IA\n"
+            "│ 💠 Estado: Solo Premium\n"
+            "│ \n"
+            "│ 🧭 Soluciones:\n"
+            "│ ├ Activa tu membresía Premium\n"
+            "│ └ Usa comandos básicos disponibles\n"
+            "╘════════════════════════╛\n"
+            "📡 Nodo de contacto: @SteveCHRB",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -2709,7 +2751,7 @@ async def ex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"❌ **Créditos insuficientes**\n\n"
                 f"Necesitas: 5 créditos\n"
                 f"Tienes: {user_data['credits']} créditos\n\n"
-                f"Usa /bonus para créditos gratis o /infocredits para más información",
+                f"Usa /loot para créditos gratis o /audit para más información",
                 parse_mode=ParseMode.MARKDOWN)
             return
 
@@ -2832,9 +2874,17 @@ async def bonus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if last_bonus:
         last_bonus_date = datetime.fromisoformat(last_bonus)
         if (now - last_bonus_date).days < 1:
-            hours_left = 24 - (now - last_bonus_date).seconds // 3600
-            await update.message.reply_text(f"⏰ Ya reclamaste tu bono hoy\n"
-                                            f"Vuelve en {hours_left} horas")
+            time_diff = now - last_bonus_date
+            hours_left = 24 - (time_diff.seconds // 3600)
+            minutes_left = 60 - ((time_diff.seconds % 3600) // 60)
+
+            response = f"┏━━━⛔ ACCESO DENEGADO ━━━┓\n"
+            response += f"┃ 💉 Ya reclamaste tu dosis diaria ┃\n"
+            response += f"┃ 🧬 Próximo acceso en: {hours_left}H {minutes_left}M ┃\n"
+            response += f"┃ 🔒 Canal: FLUJO/DAILY ┃\n"
+            response += f"┗━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+
+            await update.message.reply_text(response)
             return
 
     # Dar bono
@@ -2846,30 +2896,32 @@ async def bonus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'last_bonus': now.isoformat()
         })
 
-    response = f"🎁 **BONO DIARIO RECLAMADO** 🎁\n\n"
-    response += f"💎 **Créditos obtenidos:** {bonus_amount}\n"
-    response += f"💰 **Total créditos:** {user_data['credits'] + bonus_amount}\n\n"
-    response += f"⏰ Vuelve mañana para más créditos gratis"
+    response = f"╔═[⚠ SYSTEM PATCH: INJECTION OK ]═╗\n"
+    response += f"║ 📡 FLUJO: DIARIA - Canal_015     ║\n"
+    response += f"║ 💾 Carga recibida: +{bonus_amount}ᴄʀ          ║\n"
+    response += f"║ 🧮 CR Wallet: {user_data['credits'] + bonus_amount} Units      ║\n"
+    response += f"║ 🕘 Próxima carga: +24H           ║\n"
+    response += f"╠═══════════════════════════════╣\n"
+    response += f"║ ✳️ Recuerda: flujo constante     ║\n"
+    response += f"║     garantiza continuidad...     ║\n"
+    response += f"╚═══════════════════════════════╝"
 
-    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(response)
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Estado del bot"""
-    response = f"╔═════════════════════════╗\n"
-    response += f"║    🤖 𝐄𝐒𝐓𝐀𝐃𝐎 𝐃𝐄𝐋 𝐁𝐎𝐓    ║\n"
-    response += f"╚═════════════════════════╝\n\n"
+    response = f"🛰️ **ESTADO DEL NÚCLEO**\n\n"
 
-    response += f"🟢 **Estado:** Operativo\n"
-    response += f"⚡ **Uptime:** 99.9%\n"
-    response += f"🔧 **Versión:** 𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩\n"
-    response += f"💻 **Servidor:** Anonymous\n"
-    response += f"🌐 **Latencia:** <50ms\n\n"
+    response += f"• 🟢 Online y operativo\n"
+    response += f"• ⚙️ Versión: 𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩 v4.2\n"
+    response += f"• 💻 Servidor: Quantum Core Anonymous\n"
+    response += f"• 🌐 Ping: 47ms\n"
+    response += f"• 🔒 Seguridad SSL: Activa\n"
+    response += f"• ⏳ Uptime: 99.9%\n"
+    response += f"• 🔄 Última sync: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
 
-    response += f"🛡️ **Seguridad:** SSL Activado\n"
-    response += f"🔄 **Última actualización:** {datetime.now().strftime('%d/%m/%Y')}\n"
-    response += f"📡 **API Status:** Online\n"
-    response += f"🎯 **Performance:** Óptimo"
+    response += f"📡 **Sistema completamente operacional**"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -3157,17 +3209,21 @@ async def pasarela_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
     if not args:
-        response = f"🔍 **DETECTOR DE PASARELAS CHLV** 🔍\n\n"
-        response += f"**Uso:** `/pasarela [URL]`\n\n"
-        response += f"🎯 **Funciones CHLV:**\n"
-        response += f"• Detecta 40+ pasarelas de pago\n"
-        response += f"• Análisis inteligente de contenido\n"
-        response += f"• Soporte para e-commerce latinoamericano\n"
-        response += f"• Detección de crypto y métodos alternativos\n"
-        response += f"• Múltiples intentos de conexión\n"
-        response += f"• Compatible con sitios protegidos\n\n"
-        response += f"💡 **Tip:** Funciona con URLs con o sin protocolo\n"
-        response += f"🌎 **Soporte:** Pasarelas mundiales y regionales"
+        response = f"⧼ 📊 ESCÁNER BRIDGE 📊 ⧽\n\n"
+        response += f"🛰️ **Comando:** `/bridge [URL]`\n\n"
+        response += f"✔️ **Detecta 40+ gateways de pago**\n"
+        response += f"✔️ **Análisis inteligente IA**\n"
+        response += f"✔️ **Compatible con e-commerce LATAM**\n"
+        response += f"✔️ **Detección de crypto & métodos alternativos**\n"
+        response += f"✔️ **Soporte para sitios protegidos**\n"
+        response += f"✔️ **Múltiples intentos de conexión**\n\n"
+        response += f"💡 **Tip:** No necesitas incluir \"https://\"\n"
+        response += f"🌐 **Compatible con sitios protegidos**\n"
+        response += f"🎯 **Soporte:** bridge mundiales y regionales\n\n"
+        response += f"**Ejemplos de uso:**\n"
+        response += f"• `/bridge amazon.com`\n"
+        response += f"• `/bridge mercadolibre.com.ar`\n"
+        response += f"• `/bridge stripe.com`"
 
         await update.message.reply_text(response,
                                         parse_mode=ParseMode.MARKDOWN)
@@ -3208,11 +3264,12 @@ async def pasarela_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Mensaje de análisis mejorado con progreso
     analysis_msg = await update.message.reply_text(
-        "🔍 **INICIANDO ANÁLISIS ULTRA** 🔍\n\n"
-        f"🌐 **URL:** {original_url}\n"
+        "⧼ 🔍 ANALIZADOR ULTRA ACTIVADO ⧽\n\n"
+        f"🛰️ **Target:** {original_url}\n"
         f"🔗 **Procesando:** {url}\n"
-        f"⏳ **Fase 1:** Validando conectividad...\n"
-        f"📊 **Progreso:** [█░░░░░░░░░] 10%",
+        f"⚡ **Fase 1:** Validando conectividad...\n"
+        f"📊 **Progreso:** [█░░░░░░░░░] 10%\n\n"
+        f"🤖 **Motor:** ChernobylChLv Ultra Engine",
         parse_mode=ParseMode.MARKDOWN)
 
     try:
@@ -3222,11 +3279,12 @@ async def pasarela_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Actualizar progreso
         await analysis_msg.edit_text(
-            "🔍 **ANÁLISIS EN PROGRESO** 🔍\n\n"
-            f"🌐 **URL:** {original_url}\n"
+            "⧼ ⚡ ANÁLISIS EN PROGRESO ⧽\n\n"
+            f"🛰️ **Target:** {original_url}\n"
             f"🔗 **Procesando:** {url}\n"
-            f"⏳ **Fase 2:** Obteniendo contenido web...\n"
-            f"📊 **Progreso:** [███░░░░░░░] 30%",
+            f"⚡ **Fase 2:** Obteniendo contenido web...\n"
+            f"📊 **Progreso:** [███░░░░░░░] 30%\n\n"
+            f"🧠 **IA:** Analizando estructura...",
             parse_mode=ParseMode.MARKDOWN)
 
         detected = await detect_payment_gateways(url)
@@ -3234,11 +3292,12 @@ async def pasarela_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Simular más progreso
         await asyncio.sleep(0.5)
         await analysis_msg.edit_text(
-            "🔍 **ANÁLISIS AVANZADO** 🔍\n\n"
-            f"🌐 **URL:** {original_url}\n"
+            "⧼ 🧠 ANÁLISIS IA AVANZADO ⧽\n\n"
+            f"🛰️ **Target:** {original_url}\n"
             f"🔗 **Procesando:** {url}\n"
-            f"⏳ **Fase 3:** Detectando pasarelas...\n"
-            f"📊 **Progreso:** [██████░░░░] 60%",
+            f"⚡ **Fase 3:** Detectando bridges...\n"
+            f"📊 **Progreso:** [██████░░░░] 60%\n\n"
+            f"🔍 **Escaneando:** 40+ patrones de gateways",
             parse_mode=ParseMode.MARKDOWN)
 
         if detected is None:
@@ -3263,80 +3322,100 @@ async def pasarela_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Progreso final
         await analysis_msg.edit_text(
-            "🔍 **FINALIZANDO ANÁLISIS** 🔍\n\n"
-            f"🌐 **URL:** {original_url}\n"
-            f"⏳ **Fase 4:** Generando reporte...\n"
-            f"📊 **Progreso:** [██████████] 100%",
+            "⧼ ✨ FINALIZANDO ANÁLISIS ⧽\n\n"
+            f"🛰️ **Target:** {original_url}\n"
+            f"⚡ **Fase 4:** Generando reporte...\n"
+            f"📊 **Progreso:** [██████████] 100%\n\n"
+            f"📋 **Compilando resultados...**",
             parse_mode=ParseMode.MARKDOWN)
 
         await asyncio.sleep(0.5)
 
-        # Construir respuesta mejorada con estadísticas
+        # Construir respuesta con el nuevo formato CHLV
         total_detected = sum(len(gateways) for gateways in detected.values())
 
         if total_detected == 0:
-            response = f"🔍 **ANÁLISIS COMPLETADO** 🔍\n"
-            response += f"{'═' * 40}\n\n"
-            response += f"🌐 **Sitio:** {original_url}\n"
-            response += f"📊 **Estado:** Analizado exitosamente\n\n"
-            response += f"❌ **NO SE DETECTARON PASARELAS** ❌\n\n"
-            response += f"💡 **Posibles razones:**\n"
-            response += f"• 🏪 Sitio no comercial (sin tienda online)\n"
-            response += f"• 🔧 Pasarelas implementadas de forma personalizada\n"
-            response += f"• ⚡ Contenido cargado dinámicamente (JavaScript)\n"
-            response += f"• 🎯 Sitio en construcción o modo mantenimiento\n"
-            response += f"• 🌐 Página de aterrizaje sin funciones de pago\n\n"
-            response += f"💭 **Sugerencias:**\n"
-            response += f"• Intenta con la página de checkout/carrito\n"
-            response += f"• Verifica si es un sitio de e-commerce\n"
-            response += f"• Prueba con `/pasarela sitio.com/shop`"
+            response = f"⧼ 📊 REPORTE DE ANÁLISIS ⧽\n"
+            response += f"{'═' * 35}\n\n"
+            response += f"🛰️ **TARGET ESCANEADO:**\n"
+            response += f"↳ {url}\n\n"
+            response += f"📦 **DETECCIÓN INTELIGENTE:**\n"
+            response += f"┣ 🏪 Plataformas E-Commerce: 0\n"
+            response += f"┣ 💳 Procesadores de pago: 0\n"
+            response += f"┣ 💰 Métodos alternativos: 0\n"
+            response += f"┗ 🎯 Total detectado: 0\n\n"
+            response += f"📊 **ESTADÍSTICAS IA:**\n"
+            response += f"┌─────────────────────┐\n"
+            response += f"│ 🏪 E-Commerce.....: 0  │\n"
+            response += f"│ 💳 Gateways.......: 0  │\n"
+            response += f"│ 💰 Métodos alt....: 0  │\n"
+            response += f"│ ⚠️ Potencial CC...: ❌  │\n"
+            response += f"└─────────────────────┘\n\n"
+            response += f"⏰ **Completado:** {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}\n"
+            response += f"🤖 **Motor:** ChernobylChLv Ultra Engine\n"
+            response += f"👤 **Usuario:** @{update.effective_user.username or update.effective_user.first_name}\n"
+            response += f"{'═' * 35}"
         else:
-            response = f"✅ **ANÁLISIS COMPLETADO CON ÉXITO** ✅\n"
-            response += f"{'═' * 45}\n\n"
-            response += f"🌐 **Sitio analizado:** {original_url}\n"
-            response += f"🎯 **Total detectado:** {total_detected} pasarela{'s' if total_detected > 1 else ''}\n\n"
-
-            if detected['destacadas']:
-                response += f"🔥 **PLATAFORMAS E-COMMERCE ({len(detected['destacadas'])}):**\n"
-                for i, gateway in enumerate(detected['destacadas'], 1):
-                    response += f"  {i}. {gateway}\n"
-                response += f"\n"
-
-            if detected['principales']:
-                response += f"💳 **PASARELAS PRINCIPALES ({len(detected['principales'])}):**\n"
-                for i, gateway in enumerate(detected['principales'], 1):
-                    response += f"  {i}. {gateway}\n"
-                response += f"\n"
-
-            if detected['otras']:
-                response += f"💰 **MÉTODOS ADICIONALES ({len(detected['otras'])}):**\n"
-                for i, gateway in enumerate(detected['otras'], 1):
-                    response += f"  {i}. {gateway}\n"
-                response += f"\n"
-
-            # Estadísticas detalladas
-            response += f"📊 **ESTADÍSTICAS DEL ANÁLISIS:**\n"
-            response += f"├ 🏪 **Plataformas:** {len(detected['destacadas'])}\n"
-            response += f"├ 💳 **Procesadores:** {len(detected['principales'])}\n"
-            response += f"├ 💰 **Métodos extra:** {len(detected['otras'])}\n"
-            response += f"└ 🎯 **Total general:** {total_detected}\n\n"
-
             # Análisis de efectividad
             if len(detected['principales']) >= 3:
-                effectiveness = "🔥 Muy Alto"
+                effectiveness = "✅ ULTRA ALTO"
+                risk_icon = "🔥"
             elif len(detected['principales']) >= 2:
-                effectiveness = "⚡ Alto"
+                effectiveness = "✅ ALTO"
+                risk_icon = "⚡"
             elif len(detected['principales']) >= 1:
-                effectiveness = "✅ Medio"
+                effectiveness = "⚠️ MEDIO"
+                risk_icon = "🟡"
             else:
-                effectiveness = "⚠️ Bajo"
+                effectiveness = "❌ BAJO"
+                risk_icon = "🔵"
 
-            response += f"🎯 **Potencial para CC:** {effectiveness}\n"
+            response = f"⧼ 📊 REPORTE DE ANÁLISIS ⧽\n"
+            response += f"{'═' * 35}\n\n"
+            response += f"🛰️ **TARGET ESCANEADO:**\n"
+            response += f"↳ {url}\n\n"
+            response += f"📦 **DETECCIÓN INTELIGENTE:**\n"
+            response += f"┣ 🏪 Plataformas E-Commerce: {len(detected['destacadas'])}\n"
 
-        response += f"\n" + "─" * 40 + "\n"
-        response += f"⏰ **Completado:** {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-        response += f"🤖 **Analizador:** ChernobylChLv Ultra\n"
-        response += f"👤 **Solicitado por:** @{update.effective_user.username or update.effective_user.first_name}"
+            # Mostrar plataformas detectadas
+            if detected['destacadas']:
+                for gateway in detected['destacadas']:
+                    # Limpiar el emoji del inicio para mostrarlo correctamente
+                    clean_gateway = gateway.replace('🔥 ', '')
+                    response += f"┃ ┗ ⚡ {clean_gateway}\n"
+
+            response += f"┣ 💳 Procesadores de pago: {len(detected['principales'])}\n"
+
+            # Mostrar procesadores detectados
+            if detected['principales']:
+                for i, gateway in enumerate(detected['principales']):
+                    # Limpiar el emoji del inicio
+                    clean_gateway = gateway.replace('✅ ', '')
+                    prefix = "┃ ┣" if i < len(detected['principales']) - 1 else "┃ ┗"
+                    response += f"{prefix} 💳 {clean_gateway}\n"
+
+            response += f"┣ 💰 Métodos alternativos: {len(detected['otras'])}\n"
+
+            # Mostrar métodos extra detectados
+            if detected['otras']:
+                for i, gateway in enumerate(detected['otras']):
+                    # Extraer solo el nombre sin emojis complejos
+                    clean_gateway = gateway.split(' ', 1)[1] if ' ' in gateway else gateway
+                    prefix = "┃ ┣" if i < len(detected['otras']) - 1 else "┃ ┗"
+                    response += f"{prefix} 💰 {clean_gateway}\n"
+
+            response += f"┗ 🎯 Total detectado: {total_detected}\n\n"
+            response += f"📊 **ESTADÍSTICAS IA:**\n"
+            response += f"┌─────────────────────┐\n"
+            response += f"│ 🏪 E-Commerce.....: {len(detected['destacadas']):2d} │\n"
+            response += f"│ 💳 Gateways.......: {len(detected['principales']):2d} │\n"
+            response += f"│ 💰 Métodos alt....: {len(detected['otras']):2d} │\n"
+            response += f"│ {risk_icon} Potencial CC...: {effectiveness} │\n"
+            response += f"└─────────────────────┘\n\n"
+            response += f"⏰ **Completado:** {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}\n"
+            response += f"🤖 **Motor:** ChernobylChLv Ultra Engine\n"
+            response += f"👤 **Usuario:** @{update.effective_user.username or update.effective_user.first_name}\n"
+            response += f"{'═' * 35}"
 
         await analysis_msg.edit_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -3362,7 +3441,7 @@ async def pasarela_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🤖 **Si el problema persiste, contacta a los administradores**",
             parse_mode=ParseMode.MARKDOWN)
 
-        logger.error(f"Error crítico en comando /pasarela: {e}")
+        logger.error(f"Error crítico en comando /bridge: {e}")
 
 
 async def apply_key_command(update: Update,
@@ -3457,7 +3536,7 @@ async def infocredits_command(update: Update,
                 [
                     InlineKeyboardButton("📊 Mis Estadísticas",
                                          callback_data='my_stats'),
-                    InlineKeyboardButton("🎮 Ir a Juegos",
+                    InlineKeyboardButton("🎮 Simulator",
                                          callback_data='go_games')
                 ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -3487,18 +3566,20 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
     if len(args) < 2:
+        credits_display = user_data['credits'] if not is_admin else '∞ (Admin)'
+
         await update.message.reply_text(
-            "╔═══════════════════════════════╗\n"
-            "║    💝 **SISTEMA DE DONACIONES** 💝    ║\n"
-            "╚═══════════════════════════════╝\n\n"
-            "🎁 **Comparte créditos con la comunidad**\n\n"
-            "📋 **Uso:** `/donate [user_id] [cantidad]`\n"
-            "💡 **Ejemplo:** `/donate 123456789 50`\n\n"
-            "✨ **Beneficios de donar:**\n"
-            "• Ayudas a otros usuarios del bot\n"
-            "• Contribuyes al crecimiento de la comunidad\n"
-            "💰 **Tus créditos actuales:** {}\n".format(
-                user_data['credits'] if not is_admin else '∞ (Admin)'),
+            "[▣] INITIATE CREDIT TRANSFER PROTOCOL [▣]\n\n"
+            "▸ Command: /transmit [user_id] [amount]\n"
+            "▸ Example: /transmit 123456789 50\n\n"
+            "▸ SYSTEM NOTE:\n"
+            "   + Mantener el equilibrio del ecosistema\n"
+            "   + Contribuir al crecimiento de la comunidad\n\n"
+            f"▸ Current balance: {credits_display} CR\n\n"
+            "▸ TRANSFER BENEFITS:\n"
+            "   → Apoyar a otros usuarios de la red\n"
+            "   → Fortalecer el ecosistema\n"
+            "   → Construir conexiones colaborativas",
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -3509,7 +3590,7 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ **Error en el formato**\n\n"
             "💡 La cantidad debe ser un número válido\n"
-            "📋 **Ejemplo:** `/donate 123456789 50`")
+            "📋 **Ejemplo:** `/transmit 123456789 50`")
         return
 
     if amount <= 0:
@@ -3528,8 +3609,8 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💸 **Necesitas:** {amount} créditos\n"
             f"📉 **Faltante:** {amount - user_data['credits']} créditos\n\n"
             "💡 **Obtén más créditos con:**\n"
-            "• `/bonus` - Bono diario gratis\n"
-            "• `/juegos` - Casino bot\n"
+            "• `/loot` - Bono diario gratis\n"
+            "• `/simulator` - Casino bot\n"
             "• `/apply_key` - Clave premium"
             "• Contacto con @SteveCHBll para mas creditos",
             parse_mode=ParseMode.MARKDOWN)
@@ -3545,84 +3626,92 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.update_user(target_user_id,
                    {'credits': target_user_data['credits'] + amount})
 
-    # Respuesta exitosa mejorada
-    response = "╔═══════════════════════════════╗\n"
-    response += "║    🎉 **DONACIÓN COMPLETADA** 🎉    ║\n"
-    response += "╚═══════════════════════════════╝\n\n"
-
-    response += f"💎 **Cantidad donada:** {amount:,} créditos\n"
-    response += f"👤 **Destinatario:** `{target_user_id}`\n"
-    response += f"💰 **Usuario ahora tiene:** {target_user_data['credits'] + amount:,} créditos\n\n"
-
+    # Respuesta con el nuevo formato luminoso
+    donante_display = f"{update.effective_user.first_name}"
     if is_admin:
-        response += f"🔥 **Tus créditos:** ∞ (Administrador)\n"
-    else:
-        response += f"📊 **Te quedan:** {user_data['credits'] - amount:,} créditos\n"
+        donante_display += " (∞)"
 
-    response += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-    response += f"🌟 **¡Gracias por tu generosidad!**\n"
-    response += f"🤝 **La comunidad aprecia tu contribución**"
+    response = "⧼ ⚡ TRANSACCIÓN LUMINOSA ⚡ ⧽\n\n"
+    response += f"💸 Créditos enviados: ✦ {amount} ✦\n"
+    response += f"🧬 Receptor ID: {target_user_id}\n"
+    response += f"🪙 Saldo actualizado: {target_user_data['credits'] + amount} CR\n\n"
+    response += f"👤 Donante: {donante_display}\n"
+    response += f"🕒 Fecha: {datetime.now().strftime('%d·%m·%Y | %H:%M')}\n\n"
+    response += f"➤ La energía fue transferida con éxito."
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
-    # Enviar notificación privada al receptor
+    # Enviar notificación privada al receptor con manejo mejorado
+    notification_status = "❌ No enviada"
     try:
-        receiver_message = f"🎁 **¡HAS RECIBIDO UNA DONACIÓN!** 🎁\n\n"
-        receiver_message += f"💎 **Cantidad recibida:** {amount:,} créditos\n"
-        receiver_message += f"👤 **De:** {update.effective_user.first_name}"
+        donante_display = f"{update.effective_user.first_name}"
+        if is_admin:
+            donante_display += " (∞)"
+
+        receiver_message = f"❖ 𝗡𝗢𝗧𝗜𝗙𝗜𝗖𝗔𝗖𝗜𝗢́𝗡 𝗦𝗜𝗦𝗧𝗘́𝗠𝗜𝗖𝗔 ❖\n\n"
+        receiver_message += f"🧬 Te han inyectado {amount} créditos\n"
+        receiver_message += f"🎯 Origen: {donante_display}"
 
         # Agregar username si está disponible
         if update.effective_user.username:
             receiver_message += f" (@{update.effective_user.username})"
 
-        receiver_message += f"\n💰 **Tus créditos ahora:** {target_user_data['credits'] + amount:,}\n"
-        receiver_message += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-        receiver_message += f"🌟 **¡Alguien fue muy generoso contigo!**\n"
-        receiver_message += f"🤝 **Disfruta de tus nuevos créditos**\n"
-        receiver_message += f"💡 **Úsalos sabiamente en el bot**\n\n"
-        receiver_message += f"🤖 **Chernobil ChLv**"
+        receiver_message += f"\n🪙 Saldo total: {target_user_data['credits'] + amount} CR\n\n"
+        receiver_message += f"🕒 {datetime.now().strftime('%d.%m.%Y • %H:%M')}\n\n"
+        receiver_message += f"➤ ¿Destino o coincidencia?\n\n"
+        receiver_message += f"🤖 **ChernobilChLv Bot**"
 
+        # Intentar enviar notificación al receptor
         await context.bot.send_message(chat_id=int(target_user_id),
                                        text=receiver_message,
                                        parse_mode=ParseMode.MARKDOWN)
 
-        # Log exitoso
-        logger.info(
-            f"Notificación de donación enviada al receptor {target_user_id}")
+        notification_status = "✅ Enviada exitosamente"
+        logger.info(f"✅ Notificación de donación enviada al receptor {target_user_id}")
 
     except Exception as e:
-        # Si no se puede enviar mensaje privado al receptor, no es crítico
-        logger.warning(
-            f"No se pudo enviar notificación privada al receptor {target_user_id}: {e}"
-        )
+        error_msg = str(e).lower()
+        
+        if "chat not found" in error_msg:
+            notification_status = "❌ Usuario nunca inició el bot"
+            logger.warning(f"❌ Usuario {target_user_id} no ha iniciado conversación con el bot")
+        elif "blocked" in error_msg or "forbidden" in error_msg:
+            notification_status = "❌ Usuario bloqueó el bot"
+            logger.warning(f"❌ Usuario {target_user_id} ha bloqueado el bot")
+        else:
+            notification_status = f"❌ Error: {str(e)[:30]}..."
+            logger.warning(f"❌ Error enviando notificación a {target_user_id}: {e}")
 
-    # Enviar notificación privada al donante (confirmación)
+    # Actualizar la respuesta principal para incluir estado de notificación
+    response += f"\n📱 **Notificación al receptor:** {notification_status}"
+
+    # Enviar notificación privada al donante (confirmación) con estado de entrega
     try:
         if not is_admin:  # Solo si no es admin (para evitar spam a admins)
-            donor_message = f"✅ **DONACIÓN CONFIRMADA** ✅\n\n"
-            donor_message += f"💎 **Has donado:** {amount:,} créditos\n"
-            donor_message += f"👤 **A usuario ID:** `{target_user_id}`\n"
-            donor_message += f"📊 **Tus créditos restantes:** {user_data['credits'] - amount:,}\n"
-            donor_message += f"⏰ **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            donor_message += f"🌟 **¡Gracias por tu generosidad!**\n"
-            donor_message += f"🤝 **Tu donación ha sido entregada exitosamente**\n"
-            donor_message += f"💝 **La comunidad aprecia tu contribución**\n\n"
-            donor_message += f"🎯 **Tip:** Puedes obtener más créditos con `/bonus`\n"
+            donor_message = f"❖ 𝗖𝗢𝗡𝗙𝗜𝗥𝗠𝗔𝗖𝗜𝗢́𝗡 𝗗𝗘 𝗧𝗥𝗔𝗡𝗦𝗙𝗘𝗥𝗘𝗡𝗖𝗜𝗔 ❖\n\n"
+            donor_message += f"🧬 Energía inyectada: {amount} créditos\n"
+            donor_message += f"🎯 Receptor: `{target_user_id}`\n"
+            donor_message += f"🪙 Tu saldo restante: {user_data['credits'] - amount} CR\n"
+            donor_message += f"📱 Estado notificación: {notification_status}\n\n"
+            donor_message += f"🕒 {datetime.now().strftime('%d.%m.%Y • %H:%M')}\n\n"
+            donor_message += f"➤ La transmisión fue exitosa.\n"
+            
+            if "❌" in notification_status:
+                donor_message += f"⚠️ El receptor debe iniciar el bot para recibir notificaciones.\n"
+            else:
+                donor_message += f"🌟 Tu generosidad resuena en la red.\n"
+            
+            donor_message += f"\n💡 **Recarga diaria:** `/loot`\n"
             donor_message += f"🤖 **ChernobilChLv Bot**"
 
             await context.bot.send_message(chat_id=update.effective_user.id,
                                            text=donor_message,
                                            parse_mode=ParseMode.MARKDOWN)
 
-            # Log exitoso
-            logger.info(
-                f"Notificación de confirmación enviada al donante {user_id}")
+            logger.info(f"✅ Notificación de confirmación enviada al donante {user_id}")
 
     except Exception as e:
-        # Si no se puede enviar mensaje privado al donante, no es crítico
-        logger.warning(
-            f"No se pudo enviar notificación privada al donante {user_id}: {e}"
-        )
+        logger.warning(f"❌ No se pudo enviar notificación privada al donante {user_id}: {e}")
 
 
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3760,18 +3849,18 @@ async def juegos_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = db.get_user(user_id)
 
     keyboard = [[
-        InlineKeyboardButton("🎰 Ruleta de la Suerte",
+        InlineKeyboardButton("🔥 EXPLOIT ROULETTE",
                              callback_data='play_ruleta'),
-        InlineKeyboardButton("🎲 Dados Mágicos", callback_data='play_dados')
+        InlineKeyboardButton("⚡ CRYPTO DICE", callback_data='play_dados')
     ],
                 [
-                    InlineKeyboardButton("🃏 Carta de la Fortuna",
+                    InlineKeyboardButton("🎭 SHADOW CARDS",
                                          callback_data='play_carta'),
-                    InlineKeyboardButton("⚡ Rayo de Créditos",
+                    InlineKeyboardButton("💀 DARK LIGHTNING",
                                          callback_data='play_rayo')
                 ],
                 [
-                    InlineKeyboardButton("📊 Mis Estadísticas",
+                    InlineKeyboardButton("📊 HACK STATISTICS",
                                          callback_data='game_stats')
                 ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -3788,16 +3877,26 @@ async def juegos_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             can_play = False
             time_left = 12 - hours_passed
 
-    status_text = "🟢 **DISPONIBLE**" if can_play else f"🔴 **COOLDOWN** ({time_left:.1f}h restantes)"
+    status_text = "🟢 **ONLINE**" if can_play else f"🔴 **FIREWALL** ({time_left:.1f}h cooldown)"
 
-    response = f"╔═══════════════════════════╗\n"
-    response += f"║        🎮 𝐂𝐀𝐒𝐈𝐍𝐎 𝐁𝐎𝐓        ║\n"
-    response += f"╚═══════════════════════════╝\n\n"
-    response += f"💰 **Créditos:** {user_data['credits']}\n"
-    response += f"⏰ **Estado:** {status_text}\n"
-    response += f"🎁 **Ganancia:** 3-8 créditos por juego\n"
-    response += f"⏱️ **Límite:** 1 juego cada 12 horas\n\n"
-    response += f"🎯 **Elige tu juego:**"
+    response = f"```\n"
+    response += f"╔═══════════════════════════╗\n"
+    response += f"║  ⧗      𝐂𝐀𝐒𝐈𝐍𝐎 ⧗  ║\n"
+    response += f"║    ▒▒▒ 𝐃𝐄𝐄𝐏 𝐖𝐄𝐁 ▒▒▒    ║\n"
+    response += f"╚═══════════════════════════╝\n"
+    response += f"```\n\n"
+    response += f"⚠️ **WARNING: HIGH RISK OPERATIONS** ⚠️\n\n"
+    response += f"💳 **Credits Balance:** {user_data['credits']} CR\n"
+    response += f"🛡️ **Network Status:** {status_text}\n"
+    response += f"💰 **Payout Range:** 3-8 credits per exploit\n"
+    response += f"🔒 **Security Cooldown:** 12 hour intervals\n\n"
+    response += f"```\n"
+    response += f"[SYSTEM] Initializing dark protocols...\n"
+    response += f"[AUTH ] User authenticated: {update.effective_user.first_name}\n"
+    response += f"[NET  ] Deep web connection: STABLE\n"
+    response += f"[WARN ] Proceed with caution\n"
+    response += f"```\n\n"
+    response += f"🎯 **SELECT YOUR EXPLOIT:**"
 
     await update.message.reply_text(response,
                                     reply_markup=reply_markup,
@@ -4376,16 +4475,16 @@ async def setpremium_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         db.load_data()  # Recargar desde archivo
         updated_data = db.get_user(target_user_id)
         logger.info(f"✅ Premium activado para {target_user_id}: premium={updated_data.get('premium')}, until={updated_data.get('premium_until')}")
-        
+
         # FORZAR ACTUALIZACIÓN EN GATES SYSTEM SI EXISTE
         if 'gate_system' in globals() and gate_system is not None:
             gate_system.db.load_data()  # Forzar recarga en gates también
             test_auth = gate_system.is_authorized(target_user_id)
             logger.info(f"[SETPREMIUM] TEST INMEDIATO DESPUÉS DE RECARGA: Gates reconoce a {target_user_id} = {test_auth}")
-        
+
         # Log específico para gates - VERIFICACIÓN INMEDIATA
         logger.info(f"[SETPREMIUM] Usuario {target_user_id} configurado con premium={updated_data.get('premium')} - GATES debería reconocerlo INMEDIATAMENTE")
-        
+
         # Verificar que gates reconocería al usuario ahora mismo
         if 'gate_system' in globals() and gate_system is not None:
             test_auth = gate_system.is_authorized(target_user_id)
@@ -4438,16 +4537,16 @@ async def setpremium_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         db.load_data()  # Recargar desde archivo
         updated_data = db.get_user(target_user_id)
         logger.info(f"❌ Premium desactivado para {target_user_id}: premium={updated_data.get('premium')}, until={updated_data.get('premium_until')}")
-        
+
         # FORZAR ACTUALIZACIÓN EN GATES SYSTEM SI EXISTE
         if 'gate_system' in globals() and gate_system is not None:
             gate_system.db.load_data()  # Forzar recarga en gates también
             test_auth = gate_system.is_authorized(target_user_id)
             logger.info(f"[SETPREMIUM] TEST INMEDIATO DESPUÉS DE RECARGA: Gates bloquea a {target_user_id} = {not test_auth}")
-        
+
         # Log específico para gates - VERIFICACIÓN INMEDIATA
         logger.info(f"[SETPREMIUM] Usuario {target_user_id} configurado sin premium - GATES debe bloquearlo INMEDIATAMENTE")
-        
+
         # Verificar que gates bloquearía al usuario ahora mismo
         if 'gate_system' in globals() and gate_system is not None:
             test_auth = gate_system.is_authorized(target_user_id)
@@ -4594,20 +4693,40 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     safe_full_name = escape_markdown(full_name)
     safe_username = escape_markdown(username)
 
-    response = f"╭─────────────────────────────╮\n"
-    response += f"│    🔍 **INFORMACIÓN DE USUARIO**   │\n"
-    response += f"╰─────────────────────────────╯\n\n"
-    response += f"👤 **Nombre/Username:** {safe_full_name}\n"
-    response += f"🆔 **ID:** `{target_user_id}`\n"
-    response += f"📱 **Username:** {safe_username}\n"
-    response += f"📅 **En el servidor:** {days_in_server} días\n\n"
-    response += f"💰 **Créditos:** {user_data['credits']:,}\n"
-    response += f"🏭 **Tarjetas generadas:** {user_data['total_generated']:,}\n"
-    response += f"🔍 **Tarjetas verificadas:** {user_data['total_checked']:,}\n"
-    response += f"👑 **Premium:** {premium_status}\n"
-    response += f"⚠️ **Advertencias:** {warns}/3 {risk_emoji}\n\n"
-    response += f"📊 **Actividad total:** {user_data['total_generated'] + user_data['total_checked']:,}\n"
-    response += f"⏰ **Último bono:** {user_data.get('last_bonus', 'Nunca')[:10] if user_data.get('last_bonus') else 'Nunca'}\n\n"
+    # Calcular días desde último bono
+    last_bonus_date = "Nunca"
+    if user_data.get('last_bonus'):
+        try:
+            bonus_date = datetime.fromisoformat(user_data['last_bonus'])
+            last_bonus_date = bonus_date.strftime('%d·%m·%Y')
+        except:
+            last_bonus_date = "Error"
+
+    # Determinar estado premium con días
+    premium_display = "❌"
+    if user_data.get('premium', False):
+        try:
+            premium_until = datetime.fromisoformat(user_data['premium_until'])
+            days_left = (premium_until - datetime.now()).days
+            if days_left > 0:
+                premium_display = f"✅ {days_left}d"
+            else:
+                premium_display = f"✅ -{abs(days_left)}d"
+        except:
+            premium_display = "✅"
+
+    response = f"╔═══[ USUARIO ACTIVO ]═══╗\n"
+    response += f"║ 🧬 {safe_full_name} (ID: {target_user_id})\n"
+    response += f"║ 📡 Username: {safe_username if safe_username != 'Sin username' else '—'}\n"
+    response += f"║ 🗓️ Registro: {days_in_server} días atrás\n"
+    response += f"╠═════[ ESTADO ]═════╣\n"
+    response += f"║ 💰 Créditos: {user_data['credits']:,}\n"
+    response += f"║ 🧾 Gen/Verif: {user_data['total_generated']:,}/{user_data['total_checked']:,}\n"
+    response += f"║ ⚠️ Warns: {warns} | 👑 Premium: {premium_display}\n"
+    response += f"╠═════[ BONUS INFO ]════╣\n"
+    response += f"║ 🎁 Último bono: {last_bonus_date}\n"
+    response += f"║ 📊 Actividad total: {user_data['total_generated'] + user_data['total_checked']:,}\n"
+    response += f"╚═══════════════════════╝\n\n"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -6963,7 +7082,7 @@ async def moderation_master_command(update: Update,
 
         message += "💰 **SISTEMA ECONÓMICO:**\n"
         message += "• `/premium [user_id] [días]` - Otorgar premium\n"
-        message += "• `/donate [user_id] [cantidad]` - Transferir créditos\n"
+        message += "• `/transmit [user_id] [cantidad]` - Transferir créditos\n"
         message += "• `/creditcleaningworld` - Reset masivo de créditos\n\n"
 
         message += "⚙️ **CONFIGURACIÓN AVANZADA:**\n"
@@ -7138,8 +7257,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'get_credits':
         text = "💰 **FORMAS DE OBTENER CRÉDITOS** 💰\n\n"
         text += "🎁 **Gratis:**\n"
-        text += "• `/bonus` 10 créditos diarios (15 premium)\n"
-        text += "• `/juegos` 3 / 8 créditos cada 12h\n"
+        text += "• `/loot` 10 créditos diarios (15 premium)\n"
+        text += "• `/simulator` 3 / 8 créditos cada 12h\n"
         text += "• Eventos especiales\n\n"
         text += "💎 **Premium:**\n"
         text += "• Comprar membresía con @SteveCHRB\n"
@@ -7157,7 +7276,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = "👑 **BENEFICIOS PREMIUM** 👑\n\n"
         text += "⚡ **Verificación:**\n"
         text += "• TODA la verificación simultáneos\n"
-        text += "• Mayor probabilidad de LIVE\n"
+        text += "• Mayor probabilidad inject\n"
         text += "• Resultados más rápidos\n\n"
         text += "🎯 **Límites:**\n"
         text += "• Direcciones adicionales\n\n"
@@ -7180,12 +7299,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += "• `/gen` - Generar tarjetas (gratis)\n"
         text += "• `/direccion [país]` - Direcciones por país\n"
         text += "ℹ️ **Información:**\n"
-        text += "• `/credits` - Ver créditos\n"
+        text += "• `/wallet` - Ver créditos\n"
         text += "• `/status` - Estado del bot\n"
-        text += "• `/pasarela` - Info de pasarelas\n\n"
+        text += "• `/bridge` - Info bridge\n\n"
         text += "🎁 **Bonos:**\n"
-        text += "• `/bonus` - Créditos diarios\n"
-        text += "• `/juegos` - Casino bot"
+        text += "• `/loot` - Créditos diarios\n"
+        text += "• `/simulator` - Casino bot"
 
         keyboard = [[
             InlineKeyboardButton("🔙 Regresar",
@@ -7210,7 +7329,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             methods_text = "⚡ **5 MÉTODOS** (Usuario estándar)"
 
         text = "💎 **COMANDOS CON COSTO** 💎\n\n"
-        text += "🔍 **Verificación `/live`:**\n"
+        text += "🔍 **Verificación `/inject`:**\n"
         text += "• 💰 Costo: 3 créditos por uso\n"
         text += "• 📊 Hasta 10 tarjetas por comando\n"
         text += f"• {methods_text}\n"
@@ -7258,13 +7377,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == 'go_games':
         text = "🎮 **Ir a Casino Bot** 🎮\n\n"
-        text += "Para acceder a la sección de juegos usa el comando `/juegos`\n\n"
-        text += "🎯 **Juegos disponibles:**\n"
+        text += "Para acceder a la sección de simulator usa el comando `/simulator`\n\n"
+        text += "🎯 **simulator disponibles:**\n"
         text += "• 🎰 Ruleta de la Suerte\n"
         text += "• 🎲 Dados Mágicos\n"
         text += "• 🃏 Carta de la Fortuna\n"
         text += "• ⚡ Rayo de Créditos\n\n"
-        text += "⏰ **Cooldown:** 12 horas entre juegos"
+        text += "⏰ **Cooldown:** 12 horas entre simulator"
 
         keyboard = [[
             InlineKeyboardButton("🔙 Regresar",
@@ -7291,12 +7410,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             next_game = 0
 
-        text = f"🎮 **ESTADÍSTICAS DE JUEGOS** 🎮\n\n"
-        text += f"💰 **Créditos actuales:** {user_data['credits']}\n"
-        text += f"⏰ **Último juego:** {last_game_date.strftime('%d/%m/%Y %H:%M') if last_game else 'Nunca'}\n"
-        text += f"🕐 **Próximo juego:** {'Disponible' if next_game <= 0 else f'{next_game:.1f}h'}\n"
-        text += f"🎯 **Ganancia por juego:** 3-8 créditos\n"
-        text += f"⏱️ **Cooldown:** 12 horas"
+        text = f"╔═══⟪ ☠️ GAME.STATS ☠️ ⟫═══╗\n"
+        text += f"║ 💸 Créditos: {user_data['credits']:<14} ║\n"
+        text += f"║ ⏳ Última sesión: {last_game_date.strftime('%H:%M') if last_game else 'Nunca':<8} ║\n"
+        text += f"║ 🔄 Próxima: {'Disponible' if next_game <= 0 else f'{next_game:.1f}h':<12} ║\n"
+        text += f"║ 🎯 Rango: +3 ~ +8 CR      ║\n"
+        text += f"║ 🚷 Enfriamiento: 12h      ║\n"
+        text += f"╚═══⟪ SYSTEM | OK ⟫════════╝"
 
         keyboard = [[
             InlineKeyboardButton("🔙 Regresar", callback_data='back_to_juegos')
@@ -7376,14 +7496,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         status_text = "🟢 **DISPONIBLE**" if can_play else f"🔴 **COOLDOWN** ({time_left:.1f}h restantes)"
 
-        response = f"╔═══════════════════════════╗\n"
-        response += f"║        🎮 𝐂𝐀𝐒𝐈𝐍𝐎 𝐁𝐎𝐓        ║\n"
-        response += f"╚═══════════════════════════╝\n\n"
-        response += f"💰 **Créditos:** {user_data['credits']}\n"
-        response += f"⏰ **Estado:** {status_text}\n"
-        response += f"🎁 **Ganancia:** 3-8 créditos por juego\n"
-        response += f"⏱️ **Límite:** 1 juego cada 12 horas\n\n"
-        response += f"🎯 **Elige tu juego:**"
+        response = f"┌─────────⟦ ☠️ DARK CASINO ☠️ ⟧─────────┐\n"
+        response += f"│ ██████████ UNDERGROUND VAULT ██████████ │\n"
+        response += f"└──────────────────────────────────────────┘\n\n"
+        response += f"💀 CR_WALLET: {user_data['credits']} UNITS\n"
+        response += f"🔴 SYS_STATUS: {status_text}\n"
+        response += f"⚡ PROFIT_RANGE: +3~+8 CR_UNITS\n"
+        response += f"🕘 COOLDOWN_TIMER: 12H_CYCLE\n\n"
+        response += f"⧼ SELECT_EXPLOIT_MODULE ⧽"
 
         await query.edit_message_text(response,
                                       reply_markup=reply_markup,
@@ -7713,55 +7833,7 @@ async def handle_check_approval(query, context, is_approved):
         except Exception as e:
             logger.error(f"Error enviando mensaje al grupo principal: {e}")
 
-        # Publicar en canal de publicaciones
-        try:
-            publication_chat_id = check_config['publication_chat']
 
-            # Crear mensaje de publicación con texto escapado
-            safe_username = escape_markdown(username)
-            safe_check_id = escape_markdown(check_id)
-
-            publication_text = "╔══════════════════════════════════\n"
-            publication_text += "║    🏆  **CAPTURA VERIFICADA**  🏆    ║\n"
-            publication_text += "╚══════════════════════════════════\n\n"
-            publication_text += f"👤 **Usuario:** {safe_username}\n"
-            publication_text += f"✅ **Estado:** Verificado oficialmente\n"
-            publication_text += f"🤖 **Aprobado por:** @ChernobilChLv\\_bot\n"
-            publication_text += f"🆔 **Referencia:** `{safe_check_id}`\n"
-            publication_text += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            publication_text += f"🎯 **¡Excelente trabajo!** Sigue así para más recompensas\n"
-            publication_text += f"💡 **Usa /check para verificar tus capturas**"
-
-            await context.bot.send_photo(chat_id=publication_chat_id,
-                                         photo=check_data['image_file_id'],
-                                         caption=publication_text,
-                                         parse_mode=ParseMode.MARKDOWN)
-
-        except Exception as e:
-            logger.error(f"Error publicando en canal: {e}")
-
-        await query.answer("✅ Captura aprobada - Recompensa otorgada",
-                           show_alert=True)
-
-    else:
-        # RECHAZAR: Solo actualizar estado
-        db.update_check_status(check_id, 'rejected', admin_id)
-
-        # Actualizar mensaje de verificación (para admins)
-        rejection_text = f"❌ **CAPTURA RECHAZADA** ❌\n\n"
-        rejection_text += f"🆔 **ID:** `{check_id}`\n"
-        rejection_text += f"👤 **Usuario:** {username}\n"
-        rejection_text += f"💰 **Créditos:** Sin cambios ({user_data['credits']})\n"
-        rejection_text += f"👮‍♂️ **Rechazado por:** {admin_user.first_name}\n"
-        rejection_text += f"📅 **Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-        rejection_text += f"📝 **Motivo:** Captura no cumple con los criterios\n"
-        rejection_text += f"💡 **El usuario puede intentar con otra captura válida**"
-
-        try:
-            await query.edit_message_caption(caption=rejection_text,
-                                             parse_mode=ParseMode.MARKDOWN)
-        except:
-            pass
 
         # Enviar mensaje de rechazo al grupo principal (opcional)
         try:
@@ -7882,7 +7954,7 @@ async def handle_game_play(query, context, game_type):
                 f"⏰ **COOLDOWN ACTIVO** ⏰\n\n"
                 f"⏳ Tiempo restante: {hours_left:.1f} horas\n"
                 f"🎮 Podrás jugar cada 12 horas\n\n"
-                f"💡 Usa `/bonus` para créditos diarios",
+                f"💡 Usa `/loot` para créditos diarios",
                 parse_mode=ParseMode.MARKDOWN)
             return
 
@@ -7912,11 +7984,20 @@ async def handle_game_play(query, context, game_type):
         f"⚡ El rayo de créditos te golpea... ¡{ganancia} créditos!"
     }
 
-    response = f"🎉 **¡GANASTE!** 🎉\n\n"
-    response += f"{game_name}\n"
-    response += f"{game_messages.get(game_type, f'¡Ganaste {ganancia} créditos!')}\n\n"
-    response += f"💰 **Créditos totales:** {user_data['credits'] + ganancia}\n"
-    response += f"⏰ **Próximo juego:** En 12 horas"
+    # Special format for roulette game
+    if game_type == 'play_ruleta':
+        response = f"┌──⟪ 🎲 EXPLOIT ROULETTE ⟫──┐\n"
+        response += f"│ +{ganancia} CR extraídos 💰 │\n"
+        response += f"│ Riesgo de rastro: {random.randint(60, 85)}% ⚠️ │\n"
+        response += f"│ Nodo cerrado ⛔ │\n"
+        response += f"└──⟪ Reinicio en 12h ⟫─────┘"
+    else:
+        # Default format for other games
+        response = f"🎉 **¡GANASTE!** 🎉\n\n"
+        response += f"{game_name}\n"
+        response += f"{game_messages.get(game_type, f'¡Ganaste {ganancia} créditos!')}\n\n"
+        response += f"💰 **Créditos totales:** {user_data['credits'] + ganancia}\n"
+        response += f"⏰ **Próximo juego:** En 12 horas"
 
     await query.edit_message_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -7934,7 +8015,7 @@ async def welcome_new_member(update: Update,
         welcome_text += f"🔥 **¡Te damos la bienvenida al mejor bot de CCs\\!**\n\n"
         welcome_text += f"💡 **Para empezar:**\n"
         welcome_text += f"• Usa `/start` para ver todos los comandos\n"
-        welcome_text += f"• Obtén créditos gratis con `/bonus`\n"
+        welcome_text += f"• Obtén créditos gratis con `/loot`\n"
         welcome_text += f"🎁 **Recibes 10 créditos de bienvenida**\n\n"
         welcome_text += f"📋 **Reglas básicas:**\n"
         welcome_text += f"• No spam ni enlaces\n"
@@ -7958,7 +8039,7 @@ async def welcome_new_member(update: Update,
             simple_welcome += f"🔥 ¡Te damos la bienvenida!\n\n"
             simple_welcome += f"💡 Para empezar:\n"
             simple_welcome += f"• Usa /start para ver todos los comandos\n"
-            simple_welcome += f"• Obtén créditos gratis con /bonus\n"
+            simple_welcome += f"• Obtén créditos gratis con /loot\n"
             simple_welcome += f"🎁 Recibes 10 créditos de bienvenida\n\n"
             simple_welcome += f"📋 Reglas básicas:\n"
             simple_welcome += f"• No spam ni enlaces\n"
@@ -8299,18 +8380,18 @@ def main():
         # Registrar comandos principales
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("gen", gen_command))
-        application.add_handler(CommandHandler("live", live_command))
+        application.add_handler(CommandHandler("inject", live_command))
         application.add_handler(CommandHandler("direccion", direccion_command))
         application.add_handler(CommandHandler("ex", ex_command))
-        application.add_handler(CommandHandler("credits", credits_command))
-        application.add_handler(CommandHandler("bonus", bonus_command))
+        application.add_handler(CommandHandler("wallet", credits_command))
+        application.add_handler(CommandHandler("loot", bonus_command))
         application.add_handler(CommandHandler("status", status_command))
-        application.add_handler(CommandHandler("pasarela", pasarela_command))
+        application.add_handler(CommandHandler("bridge", pasarela_command))
         application.add_handler(CommandHandler("apply_key", apply_key_command))
         application.add_handler(
-            CommandHandler("infocredits", infocredits_command))
-        application.add_handler(CommandHandler("donate", donate_command))
-        application.add_handler(CommandHandler("juegos", juegos_command))
+            CommandHandler("audit", infocredits_command))
+        application.add_handler(CommandHandler("transmit", donate_command))
+        application.add_handler(CommandHandler("simulator", juegos_command))
 
         # Sistema de verificación /check
         application.add_handler(CommandHandler("check", check_command))
