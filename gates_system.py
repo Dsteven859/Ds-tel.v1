@@ -25,12 +25,9 @@ class GateSystem:
         self.rate_limit_tracker = {}  # Control de rate limiting
 
     def is_authorized(self, user_id: str) -> bool:
-        """Verificar si el usuario tiene acceso usando SOLO la base de datos interna del bot - TIEMPO REAL"""
+        """Verificar si el usuario tiene acceso usando la base de datos MongoDB"""
         try:
-            # FORZAR ACTUALIZACIÓN DE LA BASE DE DATOS - Recargar datos frescos
-            self.db.load_data()  # Recarga la base de datos desde el archivo
-            
-            # Verificar roles de staff usando las funciones de la base de datos
+            # Verificar roles de staff usando MongoDB
             if self.db.is_founder(user_id):
                 logger.info(f"[GATES] Usuario {user_id} autorizado como FUNDADOR")
                 return True
@@ -43,19 +40,19 @@ class GateSystem:
                 logger.info(f"[GATES] Usuario {user_id} autorizado como MODERADOR")
                 return True
 
-            # OBTENER DATOS FRESCOS DEL USUARIO - FORZAR LECTURA DE ARCHIVO
+            # Obtener datos del usuario desde MongoDB
             user_data = self.db.get_user(user_id)
             is_premium = user_data.get('premium', False)
             premium_until = user_data.get('premium_until')
 
-            logger.info(f"[GATES] VERIFICACIÓN EN TIEMPO REAL - Usuario {user_id}: premium={is_premium}, until={premium_until}")
+            logger.info(f"[GATES] VERIFICACIÓN - Usuario {user_id}: premium={is_premium}, until={premium_until}")
 
-            # SI premium=False EXPLÍCITAMENTE, DENEGAR INMEDIATAMENTE
+            # Si premium=False explícitamente, denegar inmediatamente
             if is_premium is False:
-                logger.info(f"[GATES] Usuario {user_id} - Premium EXPLÍCITAMENTE False - ACCESO DENEGADO ❌")
+                logger.info(f"[GATES] Usuario {user_id} - Premium False - ACCESO DENEGADO ❌")
                 return False
 
-            # LÓGICA IDÉNTICA AL COMANDO /EX - Solo si premium=True
+            # Lógica para premium=True
             if is_premium is True:
                 if premium_until:
                     try:
@@ -64,7 +61,7 @@ class GateSystem:
                             premium_until_date = datetime.fromisoformat(premium_until)
                         else:
                             premium_until_date = premium_until
-                        
+
                         # Verificar si aún es válido
                         if datetime.now() < premium_until_date:
                             logger.info(f"[GATES] Usuario {user_id} - Premium válido hasta {premium_until_date} ✅")
@@ -76,7 +73,6 @@ class GateSystem:
                             return False
                     except Exception as date_error:
                         logger.error(f"[GATES] Error fecha premium {user_id}: {date_error}")
-                        # CAMBIO CRÍTICO: En caso de error de fecha, si premium=True, VERIFICAR MÁS ESTRICTAMENTE
                         # Si no hay fecha válida, es premium permanente
                         if premium_until is None:
                             logger.info(f"[GATES] Usuario {user_id} - Premium permanente (sin fecha) ✅")
@@ -709,9 +705,8 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if gate_system is None:
         gate_system = GateSystem(current_db)
     else:
-        # Actualizar la referencia de la base de datos Y FORZAR RECARGA
+        # Actualizar la referencia de la base de datos
         gate_system.db = current_db
-        gate_system.db.load_data()  # FORZAR RECARGA DE DATOS FRESCOS
 
     user_id = str(update.effective_user.id)
 
@@ -722,12 +717,12 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Los usuarios autorizados (premium/staff) no necesitan créditos
     if not is_authorized and user_data['credits'] < 5:
         await update.message.reply_text(
-            "❌ **CRÉDITOS INSUFICIENTES** ❌\n\n"
-            f"💰 **Necesitas:** 5 créditos\n"
-            f"💳 **Tienes:** {user_data['credits']} créditos\n\n"
-            "🎁 **Obtener más créditos:**\n"
-            "• `/bonus` - Bono diario gratis\n"
-            "• `/juegos` - Casino bot\n"
+            "❌ **LOOT INSUFICIENTE** ❌\n\n"
+            f"💰 **Necesitas:** 5 loot\n"
+            f"💳 **Tienes:** {user_data['credits']} loot\n\n"
+            "🎁 **Obtener más loot:**\n"
+            "• `/loot` - Bono diario gratis\n"
+            "• `/simulator` - Casino bot\n"
             "• Contactar administración",
             parse_mode=ParseMode.MARKDOWN
         )
@@ -746,10 +741,10 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = db.get_user(user_id)
     is_premium = user_data.get('premium', False)
     premium_until = user_data.get('premium_until')
-    
+
     # Log detallado para depuración
     logger.info(f"Gates command - Usuario {user_id}: premium={is_premium}, until={premium_until}")
-    
+
     # Verificar si el premium es válido
     premium_valid = False
     if is_premium:
@@ -759,7 +754,7 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     premium_until_date = datetime.fromisoformat(premium_until)
                 else:
                     premium_until_date = premium_until
-                
+
                 if datetime.now() < premium_until_date:
                     premium_valid = True
                     logger.info(f"Premium válido hasta {premium_until_date}")
@@ -777,52 +772,54 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Determinar tipo de usuario y acceso basado en roles de staff y premium
     if is_founder:
         user_type = "👑 FUNDADOR"
-        efectividad_text = "PRO"
         access_text = "✅ ACCESO COMPLETO"
+        status_section = "[✓] ACCESO TOTAL HABILITADO\n[✓] SISTEMAS OPERATIVOS"
+        modules_status = "🔓"
+        final_message = "➤ Selecciona tu módulo preferido:"
     elif is_cofounder:
         user_type = "💎 CO-FUNDADOR"
-        efectividad_text = "PRO"
         access_text = "✅ ACCESO COMPLETO"
+        status_section = "[✓] ACCESO TOTAL HABILITADO\n[✓] SISTEMAS OPERATIVOS"
+        modules_status = "🔓"
+        final_message = "➤ Selecciona tu módulo preferido:"
     elif is_moderator:
         user_type = "🛡️ MODERADOR"
-        efectividad_text = "PRO"
         access_text = "✅ ACCESO COMPLETO"
+        status_section = "[✓] ACCESO TOTAL HABILITADO\n[✓] SISTEMAS OPERATIVOS"
+        modules_status = "🔓"
+        final_message = "➤ Selecciona tu módulo preferido:"
     elif premium_valid:
         user_type = "💎 PREMIUM"
-        efectividad_text = "PRO"
         access_text = "✅ ACCESO COMPLETO"
+        status_section = "[✓] ACCESO TOTAL HABILITADO\n[✓] SISTEMAS OPERATIVOS"
+        modules_status = "🔓"
+        final_message = "➤ Selecciona tu módulo preferido:"
     else:
         user_type = "🆓 USUARIO ESTÁNDAR"
         access_text = "❌ SOLO VISTA PREVIA"
-        efectividad_text = "Requiere Premium/Staff"
+        status_section = "[!] ACCESO A FUNCIONES DENEGADO\n[!] VISUALIZACIÓN TEMPORAL ACTIVADA"
+        modules_status = "🔒"
+        final_message = "➤ Desbloquea acceso total:\n    ↳ PREMIUM ACTIVATION: @SteveCHBll"
 
-    response = f"🔥 **GATES SYSTEM ULTRA** 🔥\n"
-    response += f"═══════════════════════════════\n\n"
-    response += f"🎯 **Usuario:** {user_type}\n"
-    response += f"🔐 **Estado:** {access_text}\n"
-    response += f"💰 **Créditos:** {user_data['credits']}\n"
-    response += f"💳 **Costo por gate:** 5 créditos\n"
-    response += f"⚡ **Efectividad:** {efectividad_text}\n\n"
-
-    if not is_authorized:
-        response += f"🚫 **AVISO:** Solo usuarios Premium\n"
-        response += f"👀 **Puedes explorar el menú pero no usar las funciones**\n\n"
-
-    response += f"🌟 **GATES DISPONIBLES:**\n"
-    response += f"🔵 **Stripe Gate**\n"
-    response += f"🟠 **Amazon Gate**\n"
-    response += f"🔴 **PayPal Gate**\n"
-    response += f"🟡 **Ayden Gate**\n"
-    response += f"🟢 **Auth Gate**\n"
-    response += f"⚫ **CCN Charge**\n"
-    response += f"🤖 **CyberSource AI** (Premium)\n"
-    response += f"🇬🇧 **Worldpay UK** (Premium)\n"
-    response += f"🌐 **Braintree Pro** (Premium)\n\n"
-
-    if is_authorized:
-        response += f"💡 **Selecciona el gate que deseas usar:**"
-    else:
-        response += f"💎 **¡Obtén Premium para acceso completo!**"
+    # Plantilla unificada para todos los usuarios
+    response = f"┏━━━━━━━━━━━━━━━┓\n"
+    response += f"┃    GATES CORE   -  DARK ACCESS     ┃\n"
+    response += f"┗━━━━━━━━━━━━━━━┛\n\n"
+    response += f"✘ USUARIO: {user_type}\n"
+    response += f"✘ ESTADO : {access_text}\n"
+    response += f"✘ LOOT DISPONIBLE: {user_data['credits']}\n"
+    response += f"✘ COSTO POR GATE: 5 🔻\n"
+    response += f"✘ MÓDULOS RESTRINGIDOS: {modules_status}\n\n"
+    response += f"──────────────────────────────\n"
+    response += f"{status_section}\n"
+    response += f"──────────────────────────────\n\n"
+    response += f">> GATES DISPONIBLES:\n"
+    response += f"│  → 🔹 Stripe                    → 🟠 Amazon\n"
+    response += f"│  → 🔴 PayPal                   → 🟡 Ayden\n"
+    response += f"│  → 🟢 Auth                       → ⚫ CCN Charge\n"
+    response += f"│  → 🤖 CyberSource AI\n"
+    response += f"│  → 🌐 Braintree Pro       → 🇬🇧 Worldpay UK\n\n"
+    response += f"{final_message}"
 
     await update.message.reply_text(
         response,
@@ -840,8 +837,6 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     from telegram_bot import db as current_db
     if gate_system is not None:
         gate_system.db = current_db
-        # FORZAR RECARGA DE DATOS ANTES DE CADA CALLBACK
-        gate_system.db.load_data()
 
     await query.answer()
 
@@ -854,19 +849,24 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if query.data == 'gates_status':
-        status_text = f"📊 **ESTADO DE GATES** 📊\n\n"
-        status_text += f"🔵 **Stripe Gate:** 🟢 Online\n"
-        status_text += f"🟠 **Amazon Gate:** 🟢 Online\n"
-        status_text += f"🔴 **PayPal Gate:** 🟢 Online\n"
-        status_text += f"🟡 **Ayden Gate:** 🟢 Online\n"
-        status_text += f"🟢 **Auth Gate:** 🟢 Online\n"
-        status_text += f"⚫ **CCN Charge:** 🟢 Online\n"
-        status_text += f"🤖 **CyberSource AI:** 🟢 Online (Premium)\n"
-        status_text += f"🇬🇧 **Worldpay UK:** 🟢 Online (Premium)\n"
-        status_text += f"🌐 **Braintree Pro:** 🟢 Online (Premium)\n\n"
-        status_text += f"⏰ **Última actualización:** {datetime.now().strftime('%H:%M:%S')}\n"
-        status_text += f"🔄 **Uptime:** 99.9%\n"
-        status_text += f"⚠️ **Efectividad PRO**"
+        status_text = f"┏━━━━━━━━━━━━━━━┓\n"
+        status_text += f"┃    SYSTEM MONITOR - STATUS     ┃\n"
+        status_text += f"┗━━━━━━━━━━━━━━━┛\n\n"
+        status_text += f">> GATEWAY STATUS:\n"
+        status_text += f"│  🔹 Stripe.......: 🟢 ONLINE\n"
+        status_text += f"│  🟠 Amazon.......: 🟢 ONLINE\n"
+        status_text += f"│  🔴 PayPal.......: 🟢 ONLINE\n"
+        status_text += f"│  🟡 Ayden........: 🟢 ONLINE\n"
+        status_text += f"│  🟢 Auth.........: 🟢 ONLINE\n"
+        status_text += f"│  ⚫ CCN Charge...: 🟢 ONLINE\n"
+        status_text += f"│  🤖 CyberSource..: 🟢 ONLINE [PREMIUM]\n"
+        status_text += f"│  🇬🇧 Worldpay....: 🟢 ONLINE [PREMIUM]\n"
+        status_text += f"│  🌐 Braintree....: 🟢 ONLINE [PREMIUM]\n\n"
+        status_text += f">> SYSTEM INFO:\n"
+        status_text += f"│  • Última sync...: {datetime.now().strftime('%H:%M:%S')}\n"
+        status_text += f"│  • Uptime........: 99.9%\n"
+        status_text += f"│  • Efectividad...: PRO\n\n"
+        status_text += f"➤ Todos los gateways operativos"
 
         back_keyboard = [[InlineKeyboardButton("🔙 Volver", callback_data='gates_back')]]
         await query.edit_message_text(
@@ -879,23 +879,82 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if query.data == 'gates_back':
         keyboard = gate_system.create_gates_menu()
         user_data = db.get_user(user_id)
+
+        # Verificar autorización con datos frescos
+        gate_system.db.load_data()
+        is_authorized = gate_system.is_authorized(user_id)
         is_founder = db.is_founder(user_id)
         is_cofounder = db.is_cofounder(user_id)
+        is_moderator = db.is_moderator(user_id)
+        is_premium = user_data.get('premium', False)
 
+        # Verificar que el premium sea válido
+        premium_valid = False
+        if is_premium:
+            premium_until = user_data.get('premium_until')
+            if premium_until:
+                try:
+                    if isinstance(premium_until, str):
+                        premium_until_date = datetime.fromisoformat(premium_until)
+                    else:
+                        premium_until_date = premium_until
+                    premium_valid = datetime.now() < premium_until_date
+                except:
+                    premium_valid = True
+            else:
+                premium_valid = True
+
+        # Determinar tipo de usuario y estado
         if is_founder:
             user_type = "👑 FUNDADOR"
+            access_text = "✅ ACCESO COMPLETO"
+            status_section = "[✓] ACCESO TOTAL HABILITADO\n[✓] SISTEMAS OPERATIVOS"
+            modules_status = "🔓"
+            final_message = "➤ Selecciona gateway deseado:"
         elif is_cofounder:
             user_type = "💎 CO-FUNDADOR"
-        else:
+            access_text = "✅ ACCESO COMPLETO"
+            status_section = "[✓] ACCESO TOTAL HABILITADO\n[✓] SISTEMAS OPERATIVOS"
+            modules_status = "🔓"
+            final_message = "➤ Selecciona gateway deseado:"
+        elif is_moderator:
+            user_type = "🛡️ MODERADOR"
+            access_text = "✅ ACCESO COMPLETO"
+            status_section = "[✓] ACCESO TOTAL HABILITADO\n[✓] SISTEMAS OPERATIVOS"
+            modules_status = "🔓"
+            final_message = "➤ Selecciona gateway deseado:"
+        elif premium_valid:
             user_type = "💎 PREMIUM"
+            access_text = "✅ ACCESO COMPLETO"
+            status_section = "[✓] ACCESO TOTAL HABILITADO\n[✓] SISTEMAS OPERATIVOS"
+            modules_status = "🔓"
+            final_message = "➤ Selecciona gateway deseado:"
+        else:
+            user_type = "🆓 USUARIO ESTÁNDAR"
+            access_text = "❌ SOLO VISTA PREVIA"
+            status_section = "[!] ACCESO A FUNCIONES DENEGADO\n[!] VISUALIZACIÓN TEMPORAL ACTIVADA"
+            modules_status = "🔒"
+            final_message = "➤ Desbloquea acceso total:\n    ↳ PREMIUM ACTIVATION: @SteveCHBll"
 
-        response = f"🔥 **GATES SYSTEM ULTRA** 🔥\n"
-        response += f"═══════════════════════════════\n\n"
-        response += f"🎯 **Acceso:** {user_type}\n"
-        response += f"💰 **Créditos:** {user_data['credits']}\n"
-        response += f"💳 **Costo por gate:** 5 créditos\n"
-        response += f"⚡ **Efectividad:** PRO\n\n"
-        response += f"💡 **Selecciona el gate que deseas usar:**"
+        # Plantilla unificada
+        response = f"┏━━━━━━━━━━━━━━━┓\n"
+        response += f"┃    GATES CORE   -  DARK ACCESS     ┃\n"
+        response += f"┗━━━━━━━━━━━━━━━┛\n\n"
+        response += f"✘ USUARIO: {user_type}\n"
+        response += f"✘ ESTADO : {access_text}\n"
+        response += f"✘ CRÉDITOS DISPONIBLES: {user_data['credits']}\n"
+        response += f"✘ COSTO POR GATE: 5 🔻\n"
+        response += f"✘ MÓDULOS RESTRINGIDOS: {modules_status}\n\n"
+        response += f"──────────────────────────────\n"
+        response += f"{status_section}\n"
+        response += f"──────────────────────────────\n\n"
+        response += f">> GATES DISPONIBLES:\n"
+        response += f"│  → 🔹 Stripe                    → 🟠 Amazon\n"
+        response += f"│  → 🔴 PayPal                   → 🟡 Ayden\n"
+        response += f"│  → 🟢 Auth                       → ⚫ CCN Charge\n"
+        response += f"│  → 🤖 CyberSource AI\n"
+        response += f"│  → 🌐 Braintree Pro       → 🇬🇧 Worldpay UK\n\n"
+        response += f"{final_message}"
 
         await query.edit_message_text(
             response,
@@ -921,7 +980,7 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         # VERIFICAR PERMISOS AL SELECCIONAR GATE CON DATOS FRESCOS
         gate_system.db.load_data()  # FORZAR RECARGA ANTES DE VERIFICAR
         is_authorized = gate_system.is_authorized(user_id)
-        
+
         # Log detallado para depuración con datos frescos
         user_data = db.get_user(user_id)
         logger.info(f"[GATE CALLBACK] Usuario {user_id}: authorized={is_authorized}, premium={user_data.get('premium', False)}, until={user_data.get('premium_until', 'None')}")
@@ -962,18 +1021,24 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             'timestamp': datetime.now()
         }
 
-        response = f"{gate_emoji} **{gate_name.upper()}** {gate_emoji}\n"
-        response += f"═══════════════════════════════\n\n"
-        response += f"🎯 **Estado:** 🟢 Online\n"
-        response += f"💰 **Precio:** 5 créditos por tarjeta\n"
-        response += f"📊 **Plan:** Premium Access\n"
-        response += f"⚡ **Comando:** /am\n\n"
-        response += f"💳 **Envía tu tarjeta en formato:**\n"
-        response += f"`4532123456781234|12|25|123`\n\n"
-        response += f"🔄 **El gate procesará automáticamente**\n"
-        response += f"⏱️ **Tiempo estimado:** 2-5 segundos\n"
-        response += f"⚠️ **Efectividad PRO**\n\n"
-        response += f"💡 **Tip:** Usa tarjetas con BIN conocido"
+        response = f"┏━━━━━━━━━━━━━━━┓\n"
+        response += f"┃    {gate_name.upper()} - DARK PROCESS     ┃\n"
+        response += f"┗━━━━━━━━━━━━━━━┛\n\n"
+        response += f">> GATEWAY INFO:\n"
+        response += f"│  • Estado........: 🟢 ONLINE\n"
+        response += f"│  • Precio........: 5 créditos/tarjeta\n"
+        response += f"│  • Plan..........: Premium Access\n"
+        response += f"│  • Comando.......: /am\n\n"
+        response += f">> FORMAT REQUIRED:\n"
+        response += f"│  → 4532123456781234|12|25|123\n\n"
+        response += f">> PROCESS INFO:\n"
+        response += f"│  • Auto-processing: ✅\n"
+        response += f"│  • Tiempo estimado: 2-5s\n"
+        response += f"│  • Efectividad....: PRO\n\n"
+        response += f"──────────────────────────────\n"
+        response += f"[!] Sistema listo para procesar\n"
+        response += f"──────────────────────────────\n\n"
+        response += f"➤ Envía tu tarjeta para procesar"
 
         back_keyboard = [[InlineKeyboardButton("🔙 Volver al menú", callback_data='gates_back')]]
 
@@ -1049,27 +1114,42 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_cost = len(cards_found) * 5
     if user_data['credits'] < total_cost:
         await update.message.reply_text(
-            f"❌ **CRÉDITOS INSUFICIENTES** ❌\n\n"
-            f"💰 **Necesitas:** {total_cost} créditos\n"
-            f"💳 **Tienes:** {user_data['credits']} créditos\n"
-            f"📊 **Costo:** 5 créditos por tarjeta\n"
+            f"❌ **LOOT INSUFICIENTE** ❌\n\n"
+            f"💰 **Necesitas:** {total_cost} loot\n"
+            f"💳 **Tienes:** {user_data['credits']} loot\n"
+            f"📊 **Costo:** 5 loot por tarjeta\n"
             f"🎯 **Tarjetas:** {len(cards_found)}\n\n"
-            f"💡 Usa `/bonus` para obtener créditos gratis",
+            f"💡 Usa `/loot` para obtener loot gratis",
             parse_mode=ParseMode.MARKDOWN)
         return
 
-    # Descontar créditos
-    db.update_user(user_id, {'credits': user_data['credits'] - total_cost})
+    # NO descontar todos los créditos al inicio - se descontarán individualmente
 
     # Procesar cada tarjeta individualmente CON CONTROL DE RATE LIMITING
     for i, card_data in enumerate(cards_found, 1):
 
+        # Descontar 5 créditos por esta tarjeta específica
+        current_user_data = db.get_user(user_id)
+        if current_user_data['credits'] >= 5:
+            db.update_user(user_id, {'credits': current_user_data['credits'] - 5})
+        else:
+            # Si no hay suficientes créditos para esta tarjeta, parar el procesamiento
+            await update.message.reply_text(
+                f"❌ **LOOT INSUFICIENTE** ❌\n\n"
+                f"💰 **Se necesitan 5 loot más para la tarjeta {i}/{len(cards_found)}**\n"
+                f"💳 **Loot actual:** {current_user_data['credits']}\n\n"
+                f"⚠️ **Procesamiento detenido en tarjeta {i-1}/{len(cards_found)}**",
+                parse_mode=ParseMode.MARKDOWN)
+            break
+
         # Mensaje de procesamiento
         processing_msg = await update.message.reply_text(
-            f"{session['gate_emoji']} **PROCESANDO {session['gate_name'].upper()}** {session['gate_emoji']}\n\n"
-            f"💳 **Tarjeta {i}/{len(cards_found)}:** {card_data[:4]}****{card_data[-4:]}\n"
-            f"⏳ **Estado:** Conectando al gateway...\n"
-            f"🔄 **Progreso:** [██░░░░░░░░] 20%",
+            f"╔═[ {session['gate_emoji']} {session['gate_name'].upper()} - INICIANDO ]═╗\n"
+            f"║ 💳 Tarjeta: [{i}/{len(cards_found)}] {card_data[:4]}****{card_data[-4:]} ║\n"
+            f"║ ⏳ Estado : Conectando al gateway...    \n"
+            f"║ 🔄 Progreso: [██░░░░░░░░] 20%           \n"
+            f"║ 📡 Latencia: Calculando...              \n"
+            f"╚════════════════════════╝",
             parse_mode=ParseMode.MARKDOWN
         )
 
@@ -1081,19 +1161,23 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await asyncio.sleep(1.5)
         await gate_system.safe_edit_message(
             processing_msg,
-            f"{session['gate_emoji']} **PROCESANDO {session['gate_name'].upper()}** {session['gate_emoji']}\n\n"
-            f"💳 **Tarjeta {i}/{len(cards_found)}:** {card_data[:4]}****{card_data[-4:]}\n"
-            f"⏳ **Estado:** Verificando datos...\n"
-            f"🔄 **Progreso:** [████░░░░░░] 40%"
+            f"╔═[ {session['gate_emoji']} {session['gate_name'].upper()} - VERIFICANDO ]═╗\n"
+            f"║ 💳 Tarjeta: [{i}/{len(cards_found)}] {card_data[:4]}****{card_data[-4:]} ║\n"
+            f"║ ⏳ Estado : Validando datos...          \n"
+            f"║ 🔄 Progreso: [████░░░░░░] 40%           \n"
+            f"║ 📡 Latencia: 0.234s                    \n"
+            f"╚════════════════════════╝"
         )
 
         await asyncio.sleep(1.5)
         await gate_system.safe_edit_message(
             processing_msg,
-            f"{session['gate_emoji']} **PROCESANDO {session['gate_name'].upper()}** {session['gate_emoji']}\n\n"
-            f"💳 **Tarjeta {i}/{len(cards_found)}:** {card_data[:4]}****{card_data[-4:]}\n"
-            f"⏳ **Estado:** Procesando con gateway...\n"
-            f"🔄 **Progreso:** [██████░░░░] 60%"
+            f"╔═[ {session['gate_emoji']} {session['gate_name'].upper()} - PROCESANDO ]═╗\n"
+            f"║ 💳 Tarjeta: [{i}/{len(cards_found)}] {card_data[:4]}****{card_data[-4:]} ║\n"
+            f"║ ⏳ Estado : Enviando al gateway...      \n"
+            f"║ 🔄 Progreso: [██████░░░░] 60%           \n"
+            f"║ 📡 Latencia: 0.456s                    \n"
+            f"╚════════════════════════╝"
         )
 
         # Procesar según el tipo de gate
@@ -1117,20 +1201,43 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             result = await gate_system.process_auth_gate(card_data)
 
-        # Mostrar resultado final
-        status_emoji = "✅" if result['success'] else "❌"
+        # Mostrar resultado final con nuevo formato
+        parts = card_data.split('|')
+        card_number = parts[0] if len(parts) > 0 else 'N/A'
+        exp_date = f"{parts[1]}/{parts[2]}" if len(parts) > 2 else 'N/A'
 
-        final_response = f"{session['gate_emoji']} **{session['gate_name'].upper()} RESULTADO** {session['gate_emoji']}\n"
-        final_response += f"═══════════════════════════════\n\n"
-        final_response += f"💳 **Tarjeta:** {card_data}\n"
-        final_response += f"🎯 **Estado:** {result['status']} {status_emoji}\n"
-        final_response += f"📡 **Gateway:** {result['gateway']}\n"
-        final_response += f"💰 **Monto:** {result.get('amount', '$0.00')}\n"
-        final_response += f"📝 **Respuesta:** {result['message']}\n"
-        final_response += f"⏰ **Tiempo:** {datetime.now().strftime('%H:%M:%S')}\n"
-        final_response += f"👤 **Procesado por:** @{update.effective_user.username or update.effective_user.first_name}\n"
-        final_response += f"🔢 **Tarjeta {i} de {len(cards_found)}**\n\n"
-        final_response += f"💰 **Créditos restantes:** {user_data['credits'] - total_cost}"
+        # Obtener emoji del gate
+        gate_emoji = session['gate_emoji']
+        gate_name = session['gate_name'].upper()
+
+        # Obtener créditos actualizados DESPUÉS de cada verificación individual
+        current_user_data = db.get_user(user_id)
+        credits_remaining = current_user_data['credits']
+
+        final_response = f"╔═[ {gate_emoji} {gate_name}: RESULTADO ]═╗\n"
+        final_response += f"║ 💳 Tarjeta : {card_number}\n"
+        final_response += f"║ 📅 Expira : {exp_date}\n"
+        final_response += f"║ 🎯 Estado : {result['status']}\n"
+        final_response += f"║ 📡 Gateway : {result['gateway']}\n"
+        final_response += f"║ 💰 Monto : {result.get('amount', '$0.00')}\n"
+        final_response += f"║ 📝 Respuesta : {result['message']}\n"
+        final_response += f"║ ⏰ Tiempo : {datetime.now().strftime('%H:%M:%S')}\n"
+        final_response += f"║ 👤 Checker : @{update.effective_user.username or update.effective_user.first_name}\n"
+        final_response += f"║ 🔢 Proceso : {i} / {len(cards_found)}\n"
+        final_response += f"╚════════════════════════════════╝\n\n"
+
+        final_response += f"💰 loot restantes → {credits_remaining}\n\n"
+
+        # System notice según el resultado
+        if result['success']:
+            final_response += f"✅ SYSTEM NOTICE:\n"
+            final_response += f"• Transacción aprobada por el gateway\n"
+            final_response += f"• Método de pago válido y activo"
+        else:
+            final_response += f"⚠️ SYSTEM NOTICE:\n"
+            final_response += f"• Transacción rechazada por el gateway\n"
+            final_response += f"• Método de pago no válido"
+
 
         keyboard = [[InlineKeyboardButton("🔄 Procesar otra", callback_data=gate_type),
                     InlineKeyboardButton("🔙 Menú principal", callback_data='gates_back')]]
@@ -1154,7 +1261,7 @@ def check_user_premium_status(user_id: str) -> dict:
         user_data = db.get_user(user_id)
         is_premium = user_data.get('premium', False)
         premium_until = user_data.get('premium_until')
-        
+
         return {
             'user_id': user_id,
             'is_premium': is_premium,
