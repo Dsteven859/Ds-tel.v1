@@ -6,13 +6,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-# Verificar si pymongo está disponible
-try:
-    import pymongo
-    PYMONGO_AVAILABLE = True
-except ImportError:
-    PYMONGO_AVAILABLE = False
-
 logger = logging.getLogger(__name__)
 
 async def mongodb_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -27,33 +20,6 @@ async def mongodb_status_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(
             "❌ **ACCESO DENEGADO**\n\n"
             "🔒 Solo administradores pueden usar este comando",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return
-
-    # Verificar si pymongo está disponible
-    if not PYMONGO_AVAILABLE:
-        await update.message.reply_text(
-            "❌ **PYMONGO NO DISPONIBLE**\n\n"
-            "📦 **Error:** La biblioteca pymongo no está instalada\n"
-            "🔧 **Solución:** Agregar pymongo a requirements_bot.txt\n\n"
-            "💡 **Para Render:** Asegúrate que requirements_bot.txt incluya:\n"
-            "`pymongo==4.6.0`",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return
-
-    # Verificar conexión a MongoDB
-    if not await db.ensure_connection():
-        await update.message.reply_text(
-            "❌ **NO HAY CONEXIÓN A MONGODB**\n\n"
-            "🔴 **Estado:** Desconectado\n"
-            "💡 **Posibles causas:**\n"
-            "• Variables de entorno no configuradas\n"
-            "• URL de conexión inválida\n"
-            "• Problemas de red\n"
-            "• MongoDB Atlas inaccesible\n\n"
-            "🔧 **Verifica:** Variables MONGODB_URL en Secrets",
             parse_mode=ParseMode.MARKDOWN
         )
         return
@@ -160,16 +126,6 @@ async def mongodb_reconnect_command(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text("❌ Acceso denegado")
         return
 
-    # Verificar si pymongo está disponible
-    if not PYMONGO_AVAILABLE:
-        await update.message.reply_text(
-            "❌ **PYMONGO NO DISPONIBLE**\n\n"
-            "📦 La biblioteca pymongo no está instalada\n"
-            "🔧 Instala pymongo para usar comandos MongoDB",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return
-
     processing_msg = await update.message.reply_text(
         "🔄 **RECONECTANDO A MONGODB...**\n\n"
         "⏳ Cerrando conexión actual...",
@@ -221,27 +177,6 @@ async def mongodb_cleanup_command(update: Update, context: ContextTypes.DEFAULT_
     # Solo administradores pueden limpiar datos
     if user_id_int not in ADMIN_IDS:
         await update.message.reply_text("❌ Solo administradores pueden limpiar la base de datos")
-        return
-
-    # Verificar si pymongo está disponible
-    if not PYMONGO_AVAILABLE:
-        await update.message.reply_text(
-            "❌ **PYMONGO NO DISPONIBLE**\n\n"
-            "📦 La biblioteca pymongo no está instalada\n"
-            "🔧 Instala pymongo para usar comandos MongoDB",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return
-
-    # Verificar conexión a MongoDB
-    if not await db.ensure_connection():
-        await update.message.reply_text(
-            "❌ **NO HAY CONEXIÓN A MONGODB**\n\n"
-            "🔴 **Estado:** Desconectado\n"
-            "💡 No se puede realizar limpieza sin conexión a la base de datos\n\n"
-            "🔧 **Verifica:** Variables MONGODB_URL en Secrets",
-            parse_mode=ParseMode.MARKDOWN
-        )
         return
 
     # Verificar si se especificó días como argumento
@@ -319,27 +254,6 @@ async def mongodb_backup_command(update: Update, context: ContextTypes.DEFAULT_T
     # Solo administradores pueden hacer backup
     if user_id_int not in ADMIN_IDS:
         await update.message.reply_text("❌ Solo administradores pueden crear respaldos de la base de datos")
-        return
-
-    # Verificar si pymongo está disponible
-    if not PYMONGO_AVAILABLE:
-        await update.message.reply_text(
-            "❌ **PYMONGO NO DISPONIBLE**\n\n"
-            "📦 La biblioteca pymongo no está instalada\n"
-            "🔧 Instala pymongo para usar comandos MongoDB",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return
-
-    # Verificar conexión a MongoDB
-    if not await db.ensure_connection():
-        await update.message.reply_text(
-            "❌ **NO HAY CONEXIÓN A MONGODB**\n\n"
-            "🔴 **Estado:** Desconectado\n"
-            "💡 No se puede crear respaldo sin conexión a la base de datos\n\n"
-            "🔧 **Verifica:** Variables MONGODB_URL en Secrets",
-            parse_mode=ParseMode.MARKDOWN
-        )
         return
 
     processing_msg = await update.message.reply_text(
@@ -557,27 +471,6 @@ async def mongodb_render_backup_command(update: Update, context: ContextTypes.DE
         await update.message.reply_text("❌ Solo administradores pueden crear respaldos para Render")
         return
 
-    # Verificar si pymongo está disponible
-    if not PYMONGO_AVAILABLE:
-        await update.message.reply_text(
-            "❌ **PYMONGO NO DISPONIBLE**\n\n"
-            "📦 La biblioteca pymongo no está instalada\n"
-            "🔧 Instala pymongo para usar comandos MongoDB",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return
-
-    # Verificar conexión a MongoDB
-    if not await db.ensure_connection():
-        await update.message.reply_text(
-            "❌ **NO HAY CONEXIÓN A MONGODB**\n\n"
-            "🔴 **Estado:** Desconectado\n"
-            "💡 No se puede crear respaldo sin conexión a la base de datos\n\n"
-            "🔧 **Verifica:** Variables MONGODB_URL en Secrets",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return
-
     processing_msg = await update.message.reply_text(
         "🚀 **CREANDO RESPALDO PARA RENDER** 🚀\n\n"
         "⏳ Preparando datos para migración...",
@@ -780,16 +673,6 @@ async def handle_mongodb_callbacks(update: Update, context: ContextTypes.DEFAULT
     # Verificar permisos usando ADMIN_IDS
     if user_id_int not in ADMIN_IDS:
         await query.edit_message_text("❌ Acceso denegado")
-        return
-
-    # Verificar si pymongo está disponible para callbacks que requieren base de datos
-    if not PYMONGO_AVAILABLE and query.data != 'db_close':
-        await query.edit_message_text(
-            "❌ **PYMONGO NO DISPONIBLE**\n\n"
-            "📦 La biblioteca pymongo no está instalada\n"
-            "🔧 Instala pymongo para usar comandos MongoDB",
-            parse_mode=ParseMode.MARKDOWN
-        )
         return
 
     # Manejar confirmaciones de limpieza
