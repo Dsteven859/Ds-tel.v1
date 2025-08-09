@@ -699,6 +699,11 @@ def get_enhanced_bin_info(bin_number):
         }
     }
 
+# Importar comandos de MongoDB
+from mongodb_admin_commands import mongodb_status_command, mongodb_reconnect_command, mongodb_cleanup_command, mongodb_backup_command, mongodb_render_backup_command, handle_mongodb_callbacks
+
+# Importar sistema de gates
+from gates_system import gates_command, handle_gate_callback, process_gate_card
 
 # Configuración de logging
 logging.basicConfig(
@@ -706,6 +711,19 @@ logging.basicConfig(
     level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Importar sistema MongoDB
+from mongodb_database import MongoDatabase
+
+# Sistema de migración para compatibilidad
+def migrate_old_data():
+    """Migrar datos del sistema anterior si existe"""
+    try:
+        if os.path.exists('bot_data.json'):
+            logger.info("🔄 Detectado archivo de datos anterior, migrando...")
+            from mongodb_database import migrate_json_to_mongodb
+            asyncio.create_task(migrate_json_to_mongodb())
+    except Exception as e:
+        logger.error(f"Error en migración: {e}")
 
 # Base de datos simulada (en producción usar SQLite/PostgreSQL)
 class Database:
@@ -1224,7 +1242,11 @@ COFOUNDER_IDS = [
 # Los admins principales también son fundadores automáticamente
 FOUNDER_IDS.extend([id for id in ADMIN_IDS if id not in FOUNDER_IDS])
 
-db = Database()
+# Inicializar MongoDB
+db = MongoDatabase()
+
+# Migrar datos antiguos si existen
+migrate_old_data()
 
 
 # Generador de tarjetas BIN
@@ -1618,7 +1640,7 @@ def group_only(func):
         if update.effective_chat.type in ['private']:
             # Verificar si el usuario tiene privilegios especiales para usar en privado
             is_admin = user_id in ADMIN_IDS
-            
+
             # Verificar roles de staff en base de datos
             is_founder = db.is_founder(user_id_str)
             is_cofounder = db.is_cofounder(user_id_str)
@@ -1627,7 +1649,7 @@ def group_only(func):
             # Verificar si es premium
             user_data = db.get_user(user_id_str)
             is_premium = user_data.get('premium', False)
-            
+
             # Verificar que el premium sea válido (no expirado)
             premium_valid = False
             if is_premium:
@@ -1647,7 +1669,7 @@ def group_only(func):
                 access_type = "Usuario estándar"
                 if is_premium and not premium_valid:
                     access_type = "Premium expirado"
-                
+
                 await update.message.reply_text(
                     "╒═📛 BLOQUEO DE ACCESO ═╕\n"
                     "│ 🔒 Canal: Privado cerrado\n"
@@ -2411,6 +2433,10 @@ async def credits_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
+# Alias para inject
+async def inject_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /inject - Alias de /live"""
+    await live_command(update, context)
 
 @check_maintenance
 @group_only
@@ -2535,7 +2561,7 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 progress_text = f"⏳ Progreso: [████░░░░░░] 40%\n💳 Procesando tarjeta: 1 de 1"
 
-            await progress_msg.edit_text(f"⧗ [⧉ CHLV_VERIFICATION ACTIVE ⧉]\n\n"
+            await progress_msg.edit_text(f"⧗ [⧉ SHAD_VERIFICATION ACTIVE ⧉]\n\n"
                                          f"{progress_text}\n\n"
                                          f"> Módulo: inject vX.2\n"
                                          f"> Estado: En curso...")
@@ -2898,8 +2924,8 @@ async def bonus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     response = f"╔═[⚠ SYSTEM PATCH: INJECTION OK ]═╗\n"
     response += f"║ 📡 FLUJO: DIARIA - Canal_015     ║\n"
-    response += f"║ 💾 Carga recibida: +{bonus_amount}ᴄʀ          ║\n"
-    response += f"║ 🧮 CR Wallet: {user_data['credits'] + bonus_amount} Units      ║\n"
+    response += f"║ 💾 Carga recibida: +{bonus_amount} loot        ║\n"
+    response += f"║ 🧮 Loot Wallet: {user_data['credits'] + bonus_amount} Units     ║\n"
     response += f"║ 🕘 Próxima carga: +24H           ║\n"
     response += f"╠═══════════════════════════════╣\n"
     response += f"║ ✳️ Recuerda: flujo constante     ║\n"
@@ -2914,8 +2940,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = f"🛰️ **ESTADO DEL NÚCLEO**\n\n"
 
     response += f"• 🟢 Online y operativo\n"
-    response += f"• ⚙️ Versión: 𝗖𝗛𝗘𝗥𝗡𝗢𝗕𝗜𝗟 𝗖𝗛𝗟𝗩 v4.2\n"
-    response += f"• 💻 Servidor: Quantum Core Anonymous\n"
+    response += f"• ⚙️ Versión: v4.2\n"
+    response += f"• 💻 Servidor: Anonymous\n"
     response += f"• 🌐 Ping: 47ms\n"
     response += f"• 🔒 Seguridad SSL: Activa\n"
     response += f"• ⏳ Uptime: 99.9%\n"
@@ -3671,7 +3697,7 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         error_msg = str(e).lower()
-        
+
         if "chat not found" in error_msg:
             notification_status = "❌ Usuario nunca inició el bot"
             logger.warning(f"❌ Usuario {target_user_id} no ha iniciado conversación con el bot")
@@ -3695,12 +3721,12 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             donor_message += f"📱 Estado notificación: {notification_status}\n\n"
             donor_message += f"🕒 {datetime.now().strftime('%d.%m.%Y • %H:%M')}\n\n"
             donor_message += f"➤ La transmisión fue exitosa.\n"
-            
+
             if "❌" in notification_status:
                 donor_message += f"⚠️ El receptor debe iniciar el bot para recibir notificaciones.\n"
             else:
                 donor_message += f"🌟 Tu generosidad resuena en la red.\n"
-            
+
             donor_message += f"\n💡 **Recarga diaria:** `/loot`\n"
             donor_message += f"🤖 **ChernobilChLv Bot**"
 
@@ -7253,6 +7279,115 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()  # Acknowledge the click
 
+    # Manejar regeneración de tarjetas
+    if query.data.startswith('regen_'):
+        try:
+            # Parsear datos del callback: regen_bin_count_month_year_cvv_card_length_cvv_length
+            parts = query.data.split('_')
+            if len(parts) >= 8:
+                bin_number = parts[1]
+                count = int(parts[2])
+                preset_month = None if parts[3] == 'rnd' else int(parts[3])
+                preset_year = None if parts[4] == 'rnd' else int(parts[4])
+                preset_cvv = None if parts[5] == 'rnd' else int(parts[5])
+                card_length = int(parts[6])
+                cvv_length = int(parts[7])
+
+                # Regenerar tarjetas con los mismos parámetros
+                if preset_month or preset_year or preset_cvv:
+                    cards = CardGenerator.generate_cards_custom_advanced(
+                        bin_number, count, preset_month, preset_year, preset_cvv,
+                        card_length, cvv_length)
+                else:
+                    cards = CardGenerator.generate_cards_advanced(
+                        bin_number, count, card_length, cvv_length)
+
+                # Obtener información REAL del BIN
+                bin_info = await get_real_bin_info(bin_number)
+
+                # Crear máscara del BIN
+                x_count = card_length - len(bin_number)
+                bin_mask = bin_number + "x" * x_count
+
+                # Mostrar formato usado
+                format_display = f"{preset_month or 'rnd'} | {preset_year or 'rnd'} | {preset_cvv or 'rnd'}"
+
+                # Respuesta regenerada
+                response = f"🟣 SYSTEM ALERT [GLITCH_FRAME_X]\n"
+                response += f"---=:: BIN Parse Protocol Init =---\n"
+                response += f"▌ ID: {bin_mask}\n"
+                response += f"▌ Format: {format_display}\n\n"
+                response += f"▌ Sending Payload...\n"
+
+                for card in cards:
+                    response += f"▒ {card}\n"
+
+                # Información del BIN con banderas
+                country_flags = {
+                    'UNITED STATES': '🇺🇸',
+                    'CANADA': '🇨🇦',
+                    'UNITED KINGDOM': '🇬🇧',
+                    'GERMANY': '🇩🇪',
+                    'FRANCE': '🇫🇷',
+                    'SPAIN': '🇪🇸',
+                    'ITALY': '🇮🇹',
+                    'BRAZIL': '🇧🇷',
+                    'MEXICO': '🇲🇽',
+                    'ARGENTINA': '🇦🇷',
+                    'COLOMBIA': '🇨🇴'
+                }
+
+                country_name = bin_info['country'].upper()
+                country_flag = country_flags.get(country_name, '🌍')
+
+                # Tiempo de generación
+                generation_time = round(random.uniform(0.025, 0.055), 3)
+
+                response += f"\n---= META DATA =---\n"
+                response += f"🏦 Banco: {bin_info['bank']}\n"
+                response += f"💳 Tipo: {bin_info['scheme']} / {bin_info['type']}\n"
+                response += f"🌍 Región: {country_flag} {bin_info['country'].upper()}\n"
+                response += f"🧠 Usuario: @{query.from_user.username or query.from_user.first_name}\n"
+                response += f"⏱️ Tiempo: {generation_time}s\n"
+                response += f"🟢 Estado: ESTABLE"
+
+                # Mantener el mismo botón regenerar con los mismos parámetros
+                regen_data = f"regen_{bin_number}_{count}_{preset_month or 'rnd'}_{preset_year or 'rnd'}_{preset_cvv or 'rnd'}_{card_length}_{cvv_length}"
+
+                keyboard = [[
+                    InlineKeyboardButton("🔄 Regenerar Tarjetas", callback_data=regen_data),
+                    InlineKeyboardButton("📊 Ver BIN Info", callback_data=f'bininfo_{bin_number}')
+                ]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                await query.edit_message_text(response, reply_markup=reply_markup)
+                return
+
+        except Exception as e:
+            logger.error(f"Error en regeneración: {e}")
+            await query.edit_message_text("❌ Error al regenerar tarjetas. Intenta usar el comando /gen nuevamente.")
+            return
+
+    # Manejar información del BIN
+    elif query.data.startswith('bininfo_'):
+        bin_number = query.data.replace('bininfo_', '')
+        bin_info = await get_real_bin_info(bin_number)
+
+        response = f"📊 **INFORMACIÓN DEL BIN** 📊\n\n"
+        response += f"🔢 **BIN:** {bin_number}\n"
+        response += f"🏦 **Banco:** {bin_info['bank']}\n"
+        response += f"💳 **Marca:** {bin_info['scheme']}\n"
+        response += f"🎯 **Tipo:** {bin_info['type']}\n"
+        response += f"🌍 **País:** {bin_info['country']}\n"
+        response += f"⭐ **Nivel:** {bin_info['level']}\n\n"
+        response += f"🔙 Usa el botón regenerar para más tarjetas"
+
+        keyboard = [[InlineKeyboardButton("🔙 Volver", callback_data="back_to_gen")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(response, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        return
+
     # Callbacks de InfoCredits
     if query.data == 'get_credits':
         text = "💰 **FORMAS DE OBTENER CRÉDITOS** 💰\n\n"
@@ -8412,7 +8547,16 @@ def main():
         application.add_handler(CommandHandler("cofounder", cofounder_command))
         application.add_handler(CommandHandler("moderator", moderator_command))
 
+        # Comandos administrativos de MongoDB
+        application.add_handler(CommandHandler("dbstatus", mongodb_status_command))
+        application.add_handler(CommandHandler("dbreconnect", mongodb_reconnect_command))
+        application.add_handler(CommandHandler("dbcleanup", mongodb_cleanup_command))
+        application.add_handler(CommandHandler("dbcleanup", mongodb_cleanup_command))
+        application.add_handler(CommandHandler("dbbackup", mongodb_backup_command))
+        application.add_handler(CommandHandler("renderbackup", mongodb_render_backup_command))
 
+        # Manejar callbacks de MongoDB
+        application.add_handler(CallbackQueryHandler(handle_mongodb_callbacks, pattern='^(db_|cleanup_)'))
         # Comandos de moderación jerárquicos
         application.add_handler(
             CommandHandler("startfoundress", startfoundress_command))
