@@ -40,11 +40,25 @@ def check_requirements():
 
 def check_environment():
     """Verifica variables de entorno"""
-    bot_token = os.getenv('BOT_TOKEN')
-    if not bot_token:
-        logger.error("❌ BOT_TOKEN no configurado")
-        logger.error("Configura tu token en las variables de entorno")
+    # Verificar variables de entorno críticas
+    required_vars = ['BOT_TOKEN']
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+
+    if missing_vars:
+        logger.error(f"❌ Variables de entorno faltantes: {missing_vars}")
+        logger.error("💡 Configura las variables en Secrets:")
+        logger.error("   - BOT_TOKEN: Token de tu bot de Telegram")
         return False
+
+    # Verificar variables de MongoDB (opcionales pero recomendadas)
+    mongodb_url = os.getenv('MONGODB_URL') or os.getenv('MONGODB_CONNECTION_STRING')
+    if not mongodb_url:
+        logger.warning("⚠️ MONGODB_URL no configurado")
+        logger.info("💡 Para usar MongoDB, configura en Secrets:")
+        logger.info("   - MONGODB_URL: Cadena de conexión de MongoDB Atlas")
+        logger.info("   - MONGODB_DB_NAME: Nombre de la base de datos (opcional)")
+    else:
+        logger.info("✅ Variables de MongoDB encontradas")
 
     logger.info("✅ Variables de entorno configuradas")
     return True
