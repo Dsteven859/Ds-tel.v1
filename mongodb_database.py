@@ -700,4 +700,4 @@ async def migrate_json_to_mongodb(json_file: str = 'bot_data.json'):
         await mongo_db.close_connection()
 
     except Exception as e:
-        logger.error(f"Error en migración: {e}")
+        logger.error(f"Error en migración: {e}") 
