@@ -199,6 +199,7 @@ class MongoDatabase:
             'user_id': user_id,
             'credits': 10,
             'total_generated': 0,
+            'total_checked': 0,
             'join_date': datetime.now().isoformat(),
             'premium': False,
             'premium_until': None,
@@ -676,6 +677,466 @@ class MongoDatabase:
         except Exception as e:
             logger.error(f"Error obteniendo links eliminados: {e}")
             return []
+
+    # Métodos de compatibilidad con el sistema anterior
+    def is_maintenance(self) -> bool:
+        """Verificar si el bot está en mantenimiento"""
+        try:
+            if not self.connection_status:
+                return False
+
+            # Obtener configuración de mantenimiento desde MongoDB
+            config = self.collections.get('config', {})
+            if hasattr(config, 'find_one'):
+                maintenance_config = config.find_one({"type": "maintenance"})
+                return maintenance_config.get('active', False) if maintenance_config else False
+            return False
+        except Exception as e:
+            logger.error(f"Error verificando mantenimiento: {e}")
+            return False
+
+    def set_maintenance(self, status: bool, message: str = ""):
+        """Activar/desactivar modo mantenimiento"""
+        try:
+            if not self.connection_status:
+                return
+
+            maintenance_config = {
+                "type": "maintenance",
+                "active": status,
+                "message": message,
+                "updated_at": datetime.now().isoformat()
+            }
+
+            if 'config' not in self.collections:
+                self.collections['config'] = self.db.config
+
+            self.collections['config'].update_one(
+                {"type": "maintenance"},
+                {"$set": maintenance_config},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Error configurando mantenimiento: {e}")
+
+    def is_housemode(self, chat_id: str) -> bool:
+        """Verificar si el chat está en modo casa"""
+        try:
+            if not self.connection_status:
+                return False
+
+            if 'housemode' not in self.collections:
+                self.collections['housemode'] = self.db.housemode
+
+            config = self.collections['housemode'].find_one({"chat_id": chat_id})
+            return config.get('active', False) if config else False
+        except Exception as e:
+            logger.error(f"Error verificando housemode: {e}")
+            return False
+
+    def set_housemode(self, chat_id: str, status: bool, reason: str = ""):
+        """Activar/desactivar modo casa (housemode)"""
+        try:
+            if not self.connection_status:
+                return
+
+            if 'housemode' not in self.collections:
+                self.collections['housemode'] = self.db.housemode
+
+            housemode_config = {
+                "chat_id": chat_id,
+                "active": status,
+                "reason": reason,
+                "activated_at": datetime.now().isoformat()
+            }
+
+            self.collections['housemode'].update_one(
+                {"chat_id": chat_id},
+                {"$set": housemode_config},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Error configurando housemode: {e}")
+
+    def get_housemode_reason(self, chat_id: str) -> str:
+        """Obtener razón del modo casa"""
+        try:
+            if not self.connection_status:
+                return ""
+
+            if 'housemode' not in self.collections:
+                self.collections['housemode'] = self.db.housemode
+
+            config = self.collections['housemode'].find_one({"chat_id": chat_id})
+            return config.get('reason', '') if config else ""
+        except Exception as e:
+            logger.error(f"Error obteniendo razón housemode: {e}")
+            return ""
+
+    def is_user_locked(self, user_id: str) -> bool:
+        """Verificar si usuario está bloqueado por seguridad"""
+        try:
+            if not self.connection_status:
+                return False
+
+            if 'security' not in self.collections:
+                self.collections['security'] = self.db.security
+
+            security_data = self.collections['security'].find_one({"user_id": user_id})
+            if not security_data:
+                return False
+
+            lock_until = security_data.get('locked_until')
+            if lock_until:
+                lock_time = datetime.fromisoformat(lock_until)
+                if datetime.now() < lock_time:
+                    return True
+                else:
+                    # Desbloquear automáticamente
+                    self.collections['security'].update_one(
+                        {"user_id": user_id},
+                        {"$unset": {"locked_until": ""}}
+                    )
+            return False
+        except Exception as e:
+            logger.error(f"Error verificando bloqueo de usuario: {e}")
+            return False
+
+    def lock_user(self, user_id: str, duration_minutes: int = 30, reason: str = ""):
+        """Bloquear usuario temporalmente"""
+        try:
+            if not self.connection_status:
+                return
+
+            if 'security' not in self.collections:
+                self.collections['security'] = self.db.security
+
+            lock_until = datetime.now() + timedelta(minutes=duration_minutes)
+
+            security_data = {
+                "user_id": user_id,
+                "locked_until": lock_until.isoformat(),
+                "lock_reason": reason,
+                "locked_at": datetime.now().isoformat()
+            }
+
+            self.collections['security'].update_one(
+                {"user_id": user_id},
+                {"$set": security_data},
+                upsert=True
+            )
+
+            self.log_action(user_id, 'USER_LOCKED', {
+                "duration_minutes": duration_minutes,
+                "reason": reason
+            })
+        except Exception as e:
+            logger.error(f"Error bloqueando usuario: {e}")
+
+    def has_permission(self, user_id: str, permission: str) -> bool:
+        """Verificar si usuario tiene permiso específico"""
+        try:
+            if not self.connection_status:
+                return False
+
+            if 'permissions' not in self.collections:
+                self.collections['permissions'] = self.db.permissions
+
+            perm_data = self.collections['permissions'].find_one({"user_id": user_id})
+            if not perm_data:
+                return False
+
+            return perm_data.get('permissions', {}).get(permission, False)
+        except Exception as e:
+            logger.error(f"Error verificando permisos: {e}")
+            return False
+
+    def set_user_permission(self, user_id: str, permission: str, granted: bool = True):
+        """Establecer permisos específicos para usuario"""
+        try:
+            if not self.connection_status:
+                return
+
+            if 'permissions' not in self.collections:
+                self.collections['permissions'] = self.db.permissions
+
+            self.collections['permissions'].update_one(
+                {"user_id": user_id},
+                {"$set": {f"permissions.{permission}": granted}},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Error configurando permisos: {e}")
+
+    def log_security_event(self, user_id: str, event_type: str, details: str):
+        """Registrar evento de seguridad"""
+        try:
+            if not self.connection_status:
+                return
+
+            if 'security_logs' not in self.collections:
+                self.collections['security_logs'] = self.db.security_logs
+
+            log_entry = {
+                "user_id": user_id,
+                "event_type": event_type,
+                "details": details,
+                "timestamp": datetime.now().isoformat()
+            }
+
+            self.collections['security_logs'].insert_one(log_entry)
+        except Exception as e:
+            logger.error(f"Error registrando evento de seguridad: {e}")
+
+    def get_admin_log_channel(self, group_id: str):
+        """Obtener canal de logs administrativos"""
+        try:
+            if not self.connection_status:
+                return None
+
+            if 'admin_channels' not in self.collections:
+                self.collections['admin_channels'] = self.db.admin_channels
+
+            config = self.collections['admin_channels'].find_one({"group_id": group_id})
+            return config if config else None
+        except Exception as e:
+            logger.error(f"Error obteniendo canal admin: {e}")
+            return None
+
+    def set_admin_log_channel(self, group_id: str, admin_channel_id: str):
+        """Configurar canal de logs administrativos"""
+        try:
+            if not self.connection_status:
+                return
+
+            if 'admin_channels' not in self.collections:
+                self.collections['admin_channels'] = self.db.admin_channels
+
+            config = {
+                "group_id": group_id,
+                "channel_id": admin_channel_id,
+                "configured_at": datetime.now().isoformat(),
+                "active": True
+            }
+
+            self.collections['admin_channels'].update_one(
+                {"group_id": group_id},
+                {"$set": config},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Error configurando canal admin: {e}")
+
+    def log_admin_action(self, action_type: str, admin_user, target_user_id: str, reason: str, group_id: str, additional_data: dict = None):
+        """Registrar acción administrativa en logs"""
+        try:
+            if not self.connection_status:
+                return None
+
+            if 'admin_logs' not in self.collections:
+                self.collections['admin_logs'] = self.db.admin_logs
+
+            log_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'action_type': action_type,
+                'admin_id': str(admin_user.id),
+                'admin_name': admin_user.first_name or "Usuario",
+                'admin_username': f"@{admin_user.username}" if admin_user.username else "Sin username",
+                'target_user_id': str(target_user_id),
+                'reason': str(reason),
+                'group_id': str(group_id),
+                'additional_data': additional_data or {}
+            }
+
+            self.collections['admin_logs'].insert_one(log_entry)
+            return log_entry
+        except Exception as e:
+            logger.error(f"Error registrando acción admin: {e}")
+            return None
+
+    def get_check_chats(self, group_id: str):
+        """Obtener configuración de chats para /check"""
+        try:
+            if not self.connection_status:
+                return None
+
+            if 'check_config' not in self.collections:
+                self.collections['check_config'] = self.db.check_config
+
+            config = self.collections['check_config'].find_one({"group_id": group_id})
+            return config if config else None
+        except Exception as e:
+            logger.error(f"Error obteniendo configuración check: {e}")
+            return None
+
+    def set_check_chats(self, group_id: str, verification_chat: str, publication_chat: str):
+        """Configurar chats para el sistema /check"""
+        try:
+            if not self.connection_status:
+                return
+
+            if 'check_config' not in self.collections:
+                self.collections['check_config'] = self.db.check_config
+
+            config = {
+                'group_id': group_id,
+                'verification_chat': verification_chat,
+                'publication_chat': publication_chat,
+                'configured_at': datetime.now().isoformat()
+            }
+
+            self.collections['check_config'].update_one(
+                {"group_id": group_id},
+                {"$set": config},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Error configurando chats check: {e}")
+
+    def add_pending_check(self, check_id: str, user_id: str, username: str, image_file_id: str, group_id: str):
+        """Agregar verificación pendiente"""
+        try:
+            if not self.connection_status:
+                return
+
+            if 'pending_checks' not in self.collections:
+                self.collections['pending_checks'] = self.db.pending_checks
+
+            check_data = {
+                'check_id': check_id,
+                'user_id': user_id,
+                'username': username,
+                'image_file_id': image_file_id,
+                'group_id': group_id,
+                'created_at': datetime.now().isoformat(),
+                'status': 'pending'
+            }
+
+            self.collections['pending_checks'].insert_one(check_data)
+        except Exception as e:
+            logger.error(f"Error agregando verificación pendiente: {e}")
+
+    def get_pending_check(self, check_id: str):
+        """Obtener verificación pendiente"""
+        try:
+            if not self.connection_status:
+                return None
+
+            if 'pending_checks' not in self.collections:
+                self.collections['pending_checks'] = self.db.pending_checks
+
+            check = self.collections['pending_checks'].find_one({"check_id": check_id})
+            return check if check else None
+        except Exception as e:
+            logger.error(f"Error obteniendo verificación pendiente: {e}")
+            return None
+
+    def update_check_status(self, check_id: str, status: str, admin_id: str = None):
+        """Actualizar estado de verificación"""
+        try:
+            if not self.connection_status:
+                return
+
+            if 'pending_checks' not in self.collections:
+                self.collections['pending_checks'] = self.db.pending_checks
+
+            update_data = {
+                'status': status,
+                'updated_at': datetime.now().isoformat()
+            }
+
+            if admin_id:
+                update_data['admin_id'] = admin_id
+                update_data['processed_at'] = datetime.now().isoformat()
+
+            self.collections['pending_checks'].update_one(
+                {"check_id": check_id},
+                {"$set": update_data}
+            )
+        except Exception as e:
+            logger.error(f"Error actualizando estado de verificación: {e}")
+
+    def remove_staff_role(self, user_id: str):
+        """Remover rol de staff"""
+        try:
+            if not self.connection_status:
+                return False
+
+            result = self.collections['staff'].delete_one({"user_id": user_id})
+            return result.deleted_count > 0
+        except Exception as e:
+            logger.error(f"Error removiendo staff {user_id}: {e}")
+            return False
+
+    # Propiedades de compatibilidad con setter
+    def _get_staff_roles_dict(self):
+        """Obtener staff_roles como diccionario para compatibilidad"""
+        try:
+            if not self.connection_status:
+                return {}
+
+            if 'staff' not in self.collections:
+                return {}
+
+            staff_data = {}
+            for staff in self.collections['staff'].find():
+                user_id = staff['user_id']
+                staff_data[user_id] = {
+                    'role': staff['role'],
+                    'assigned_date': staff.get('assigned_at', ''),
+                    'warn_count': staff.get('warn_count', 0)
+                }
+            return staff_data
+        except Exception as e:
+            logger.error(f"Error obteniendo staff_roles: {e}")
+            return {}
+
+    def _get_users_dict(self):
+        """Obtener users como diccionario para compatibilidad"""
+        try:
+            if not self.connection_status:
+                return {}
+
+            if 'users' not in self.collections:
+                return {}
+
+            users_data = {}
+            for user in self.collections['users'].find():
+                user_id = user['user_id']
+                user.pop('_id', None)
+                users_data[user_id] = user
+            return users_data
+        except Exception as e:
+            logger.error(f"Error obteniendo users: {e}")
+            return {}
+
+    # Simular atributos como diccionarios para compatibilidad total
+    def __getattr__(self, name):
+        """Compatibilidad para acceso a atributos como diccionarios"""
+        if name == 'staff_roles':
+            return self._get_staff_roles_dict()
+        elif name == 'users':
+            return self._get_users_dict()
+        elif name == 'bot_maintenance':
+            return self.is_maintenance()
+        elif name == 'maintenance_message':
+            try:
+                if not self.connection_status:
+                    return ""
+                if 'config' not in self.collections:
+                    self.collections['config'] = self.db.config
+                maintenance_config = self.collections['config'].find_one({"type": "maintenance"})
+                return maintenance_config.get('message', '') if maintenance_config else ""
+            except:
+                return ""
+        elif name == 'housemode_chats':
+            return {}  # Placeholder para compatibilidad
+        elif name == 'permissions':
+            return {}  # Placeholder para compatibilidad  
+        elif name == 'security_settings':
+            return {}  # Placeholder para compatibilidad
+        else:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
 # Función para migrar datos existentes
 def migrate_json_to_mongodb_sync(json_file: str = 'bot_data.json'):
