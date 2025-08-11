@@ -4644,117 +4644,147 @@ async def setpremium_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver información detallada de usuario por ID"""
-    args = context.args
+    """Ver información detallada de usuario por ID - Versión corregida"""
+    try:
+        args = context.args
+        target_user = None
+        target_user_id = None
 
-    # Si se responde a un mensaje, obtener el ID del usuario
-    if update.message.reply_to_message and not args:
-        target_user_id = str(update.message.reply_to_message.from_user.id)
-        target_user = update.message.reply_to_message.from_user
-    elif args:
-        # Validar que el argumento sea un ID numérico válido
-        if not args[0].isdigit() or len(args[0]) < 5:
-            await update.message.reply_text(
-                "❌ **ID INVÁLIDO** ❌\n\n"
-                "💡 **Uso correcto del comando:**\n"
-                "• `/id 123456789` - Ver info de usuario específico\n"
-                "• `/id` (respondiendo a mensaje) - Ver info del usuario\n"
-                "• `/id` (sin argumentos) - Ver tu propia información\n\n"
-                "🔍 **Ejemplo:** `/id 123456789`\n"
-                "📝 **Nota:** El ID debe ser un número de al menos 5 dígitos",
-                parse_mode=ParseMode.MARKDOWN)
-            return
+        # Si se responde a un mensaje, obtener el ID del usuario
+        if update.message.reply_to_message and not args:
+            target_user_id = str(update.message.reply_to_message.from_user.id)
+            target_user = update.message.reply_to_message.from_user
+        elif args:
+            # Validar que el argumento sea un ID numérico válido
+            if not args[0].isdigit() or len(args[0]) < 5:
+                await update.message.reply_text(
+                    "❌ ID INVÁLIDO\n\n"
+                    "💡 Uso correcto del comando:\n"
+                    "• /id 123456789 - Ver info de usuario específico\n"
+                    "• /id (respondiendo a mensaje) - Ver info del usuario\n"
+                    "• /id (sin argumentos) - Ver tu propia información\n\n"
+                    "🔍 Ejemplo: /id 123456789\n"
+                    "📝 Nota: El ID debe ser un número de al menos 5 dígitos")
+                return
 
-        target_user_id = args[0]
+            target_user_id = args[0]
+            try:
+                # Intentar obtener información del usuario
+                chat_member = await context.bot.get_chat_member(
+                    update.effective_chat.id, int(target_user_id))
+                target_user = chat_member.user
+            except Exception as e:
+                await update.message.reply_text(
+                    f"❌ USUARIO NO ENCONTRADO\n\n"
+                    f"🔍 ID buscado: {target_user_id}\n"
+                    f"💡 Posibles causas:\n"
+                    f"• El usuario no está en este chat\n"
+                    f"• ID incorrecto o inexistente\n"
+                    f"• El usuario ha abandonado el grupo\n\n"
+                    f"📋 Ejemplo de ID válido: 123456789")
+                return
+        else:
+            # Si no hay argumentos ni respuesta, mostrar información del usuario que ejecuta el comando
+            target_user_id = str(update.effective_user.id)
+            target_user = update.effective_user
+
+        # Obtener datos del usuario de la base de datos
+        user_data = db.get_user(target_user_id)
+
+        # Calcular tiempo en servidor
         try:
-            # Intentar obtener información del usuario
-            chat_member = await context.bot.get_chat_member(
-                update.effective_chat.id, int(target_user_id))
-            target_user = chat_member.user
-        except Exception as e:
-            await update.message.reply_text(
-                f"❌ **USUARIO NO ENCONTRADO** ❌\n\n"
-                f"🔍 **ID buscado:** `{target_user_id}`\n"
-                f"💡 **Posibles causas:**\n"
-                f"• El usuario no está en este chat\n"
-                f"• ID incorrecto o inexistente\n"
-                f"• El usuario ha abandonado el grupo\n\n"
-                f"📋 **Ejemplo de ID válido:** `123456789`",
-                parse_mode=ParseMode.MARKDOWN)
-            return
-    else:
-        # Si no hay argumentos ni respuesta, mostrar información del usuario que ejecuta el comando
-        target_user_id = str(update.effective_user.id)
-        target_user = update.effective_user
-
-    user_data = db.get_user(target_user_id)
-
-    # Calcular tiempo en servidor
-    join_date = datetime.fromisoformat(user_data['join_date'])
-    time_in_server = datetime.now() - join_date
-    days_in_server = time_in_server.days
-
-    # Obtener información del usuario
-    if target_user:
-        username = f"@{target_user.username}" if target_user.username else "Sin username"
-        first_name = target_user.first_name or "Sin nombre"
-        last_name = target_user.last_name or ""
-        full_name = f"{first_name} {last_name}".strip()
-    else:
-        username = "Desconocido"
-        full_name = "Usuario no encontrado"
-
-    # Estado premium
-    premium_status = "❌"
-    if user_data.get('premium', False):
-        premium_until = datetime.fromisoformat(user_data['premium_until'])
-        days_left = (premium_until - datetime.now()).days
-        premium_status = f"✅ ({days_left}d)"
-
-    # Estado de riesgo
-    warns = user_data.get('warns', 0)
-    risk_emoji = "🔴" if warns >= 2 else "🟡" if warns >= 1 else "🟢"
-
-    # Escapar caracteres especiales para evitar errores de parsing
-    safe_full_name = escape_markdown(full_name)
-    safe_username = escape_markdown(username)
-
-    # Calcular días desde último bono
-    last_bonus_date = "Nunca"
-    if user_data.get('last_bonus'):
-        try:
-            bonus_date = datetime.fromisoformat(user_data['last_bonus'])
-            last_bonus_date = bonus_date.strftime('%d·%m·%Y')
+            join_date = datetime.fromisoformat(user_data['join_date'])
+            time_in_server = datetime.now() - join_date
+            days_in_server = time_in_server.days
         except:
-            last_bonus_date = "Error"
+            days_in_server = 0
 
-    # Determinar estado premium con días
-    premium_display = "❌"
-    if user_data.get('premium', False):
+        # Obtener información del usuario de forma segura
+        if target_user:
+            username = f"@{target_user.username}" if target_user.username else "Sin username"
+            first_name = str(target_user.first_name or "Sin nombre")
+            last_name = str(target_user.last_name or "")
+            full_name = f"{first_name} {last_name}".strip()
+        else:
+            username = "Desconocido"
+            full_name = "Usuario no encontrado"
+
+        # Limpiar caracteres especiales manualmente para evitar problemas
+        def clean_text(text):
+            if not text:
+                return "N/A"
+            # Remover o reemplazar caracteres problemáticos
+            cleaned = str(text)
+            cleaned = cleaned.replace('_', ' ')
+            cleaned = cleaned.replace('*', ' ')
+            cleaned = cleaned.replace('[', '(')
+            cleaned = cleaned.replace(']', ')')
+            cleaned = cleaned.replace('`', "'")
+            return cleaned
+
+        safe_full_name = clean_text(full_name)
+        safe_username = clean_text(username)
+
+        # Determinar estado premium con manejo de errores
+        premium_display = "❌"
+        if user_data.get('premium', False):
+            try:
+                premium_until = datetime.fromisoformat(user_data['premium_until'])
+                days_left = (premium_until - datetime.now()).days
+                if days_left > 0:
+                    premium_display = f"✅ {days_left}d"
+                else:
+                    premium_display = f"✅ -{abs(days_left)}d"
+            except:
+                premium_display = "✅ Error"
+
+        # Obtener estadísticas de forma segura
+        credits = user_data.get('credits', 0)
+        total_generated = user_data.get('total_generated', 0)
+        total_checked = user_data.get('total_checked', 0)
+        warns = user_data.get('warns', 0)
+
+        # Calcular días desde último bono
+        last_bonus_date = "Nunca"
+        if user_data.get('last_bonus'):
+            try:
+                bonus_date = datetime.fromisoformat(user_data['last_bonus'])
+                last_bonus_date = bonus_date.strftime('%d/%m/%Y')
+            except:
+                last_bonus_date = "Error"
+
+        # Construir respuesta sin usar Markdown para evitar errores
+        response = "╔═══[ USUARIO ACTIVO ]═══╗\n"
+        response += f"║ 🧬 {safe_full_name} (ID: {target_user_id})\n"
+        response += f"║ 📡 Username: {safe_username if safe_username != 'Sin username' else '—'}\n"
+        response += f"║ 🗓️ Registro: {days_in_server} días atrás\n"
+        response += f"╠═════[ ESTADO ]═════╣\n"
+        response += f"║ 💰 Créditos: {credits:,}\n"
+        response += f"║ 🧾 Gen/Verif: {total_generated:,}/{total_checked:,}\n"
+        response += f"║ ⚠️ Warns: {warns} | 👑 Premium: {premium_display}\n"
+        response += f"╠═════[ BONUS INFO ]════╣\n"
+        response += f"║ 🎁 Último bono: {last_bonus_date}\n"
+        response += f"║ 📊 Actividad total: {total_generated + total_checked:,}\n"
+        response += f"╚═══════════════════════╝"
+
+        # Enviar respuesta sin markdown para evitar errores de parsing
+        await update.message.reply_text(response)
+
+    except Exception as e:
+        logger.error(f"Error en comando /id: {e}")
         try:
-            premium_until = datetime.fromisoformat(user_data['premium_until'])
-            days_left = (premium_until - datetime.now()).days
-            if days_left > 0:
-                premium_display = f"✅ {days_left}d"
-            else:
-                premium_display = f"✅ -{abs(days_left)}d"
+            # Mensaje de error simplificado
+            await update.message.reply_text(
+                "❌ ERROR TEMPORAL\n\n"
+                "Ha ocurrido un error al procesar la información del usuario.\n"
+                "Por favor intenta nuevamente.\n\n"
+                "Uso correcto:\n"
+                "• /id - Tu información\n"
+                "• /id 123456789 - Info de usuario específico\n"
+                "• /id (respondiendo a mensaje) - Info del usuario del mensaje")
         except:
-            premium_display = "✅"
-
-    response = f"╔═══[ USUARIO ACTIVO ]═══╗\n"
-    response += f"║ 🧬 {safe_full_name} (ID: {target_user_id})\n"
-    response += f"║ 📡 Username: {safe_username if safe_username != 'Sin username' else '—'}\n"
-    response += f"║ 🗓️ Registro: {days_in_server} días atrás\n"
-    response += f"╠═════[ ESTADO ]═════╣\n"
-    response += f"║ 💰 Créditos: {user_data['credits']:,}\n"
-    response += f"║ 🧾 Gen/Verif: {user_data['total_generated']:,}/{user_data['total_checked']:,}\n"
-    response += f"║ ⚠️ Warns: {warns} | 👑 Premium: {premium_display}\n"
-    response += f"╠═════[ BONUS INFO ]════╣\n"
-    response += f"║ 🎁 Último bono: {last_bonus_date}\n"
-    response += f"║ 📊 Actividad total: {user_data['total_generated'] + user_data['total_checked']:,}\n"
-    response += f"╚═══════════════════════╝\n\n"
-
-    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+            # Si ni siquiera puede enviar el mensaje de error
+            logger.error("Error crítico: No se pudo enviar mensaje de error para comando /id")
 
 
 @admin_only
