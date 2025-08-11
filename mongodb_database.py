@@ -41,14 +41,11 @@ class MongoDatabase:
         try:
             # Verificar variables de entorno requeridas
             if not self.connection_url:
-                logger.error("❌ MONGODB_URL no configurado en variables de entorno")
-                logger.error("💡 Ve a Secrets y configura:")
-                logger.error("   - MONGODB_URL: Tu cadena de conexión de MongoDB Atlas")
-                logger.error("   - MONGODB_DB_NAME: Nombre de tu base de datos (opcional)")
+                logger.warning("⚠️ MONGODB_URL no configurado - usando modo local")
                 return False
 
             if not self._validate_mongodb_url(self.connection_url):
-                logger.error("❌ La MONGODB_URL proporcionada no es válida.")
+                logger.warning("⚠️ MONGODB_URL inválida - usando modo local")
                 return False
 
             # Ocultar información sensible en logs
@@ -88,12 +85,16 @@ class MongoDatabase:
             logger.info("✅ Conectado exitosamente a MongoDB Atlas")
             return True
 
-        except (ConnectionFailure, ServerSelectionTimeoutError) as e:
-            logger.error(f"❌ Error de conexión a MongoDB: {e}")
-            self.connection_status = False
-            return False
         except Exception as e:
-            logger.error(f"❌ Error inesperado conectando a MongoDB: {e}")
+            error_msg = str(e).lower()
+            if "authentication failed" in error_msg or "bad auth" in error_msg:
+                logger.warning("⚠️ Error de autenticación MongoDB - verificar credenciales")
+                logger.warning("💡 Revisa usuario/contraseña en MONGODB_URL")
+            elif "network" in error_msg or "timeout" in error_msg:
+                logger.warning("⚠️ Error de red MongoDB - verificar conexión")
+            else:
+                logger.warning(f"⚠️ Error MongoDB: {str(e)[:100]}")
+            
             self.connection_status = False
             return False
 
@@ -171,27 +172,26 @@ class MongoDatabase:
         return await self.connect()
 
     def get_user(self, user_id: str) -> Dict[str, Any]:
-        """Obtener datos de usuario"""
+        """Obtener datos de usuario con fallback a archivo local"""
         try:
-            if not self.connection_status:
-                asyncio.create_task(self.ensure_connection())
-                return self._get_default_user(user_id)
-
-            user = self.collections['users'].find_one({"user_id": user_id})
-
-            if not user:
-                # Crear usuario nuevo
-                default_user = self._get_default_user(user_id)
-                self.collections['users'].insert_one(default_user)
-                return default_user
-
-            # Remover _id de MongoDB para compatibilidad
-            user.pop('_id', None)
-            return user
+            if self.connection_status and self.collections:
+                user = self.collections['users'].find_one({"user_id": user_id})
+                if user:
+                    # Remover _id de MongoDB para compatibilidad
+                    user.pop('_id', None)
+                    return user
+                else:
+                    # Crear usuario nuevo en MongoDB
+                    default_user = self._get_default_user(user_id)
+                    self.collections['users'].insert_one(default_user)
+                    return default_user
+            else:
+                # Fallback a archivo local
+                return self._get_user_from_file(user_id)
 
         except Exception as e:
-            logger.error(f"Error obteniendo usuario {user_id}: {e}")
-            return self._get_default_user(user_id)
+            logger.warning(f"Error obteniendo usuario {user_id} de MongoDB, usando fallback: {e}")
+            return self._get_user_from_file(user_id)
 
     def _get_default_user(self, user_id: str) -> Dict[str, Any]:
         """Usuario por defecto"""
@@ -208,24 +208,72 @@ class MongoDatabase:
             'banned': False
         }
 
-    def update_user(self, user_id: str, data: Dict[str, Any]):
-        """Actualizar datos de usuario"""
+    def _get_user_from_file(self, user_id: str) -> Dict[str, Any]:
+        """Obtener usuario desde archivo local como fallback"""
         try:
-            if not self.connection_status:
-                asyncio.create_task(self.ensure_connection())
-                return
+            if os.path.exists('bot_data.json'):
+                with open('bot_data.json', 'r') as f:
+                    data = json.load(f)
+                    users = data.get('users', {})
+                    if user_id in users:
+                        return users[user_id]
+            
+            # Si no existe, crear usuario por defecto
+            default_user = self._get_default_user(user_id)
+            self._save_user_to_file(user_id, default_user)
+            return default_user
+            
+        except Exception as e:
+            logger.error(f"Error leyendo archivo local: {e}")
+            return self._get_default_user(user_id)
 
+    def _save_user_to_file(self, user_id: str, user_data: Dict[str, Any]):
+        """Guardar usuario en archivo local como fallback"""
+        try:
+            data = {}
+            if os.path.exists('bot_data.json'):
+                with open('bot_data.json', 'r') as f:
+                    data = json.load(f)
+            
+            if 'users' not in data:
+                data['users'] = {}
+            
+            data['users'][user_id] = user_data
+            
+            with open('bot_data.json', 'w') as f:
+                json.dump(data, f, indent=2)
+                
+        except Exception as e:
+            logger.error(f"Error guardando en archivo local: {e}")
+
+    def update_user(self, user_id: str, data: Dict[str, Any]):
+        """Actualizar datos de usuario con fallback"""
+        try:
             # Actualizar timestamp
             data['updated_at'] = datetime.now().isoformat()
 
-            self.collections['users'].update_one(
-                {"user_id": user_id},
-                {"$set": data},
-                upsert=True
-            )
+            if self.connection_status and self.collections:
+                # Intentar actualizar en MongoDB
+                self.collections['users'].update_one(
+                    {"user_id": user_id},
+                    {"$set": data},
+                    upsert=True
+                )
+            else:
+                # Fallback a archivo local
+                current_user = self._get_user_from_file(user_id)
+                current_user.update(data)
+                self._save_user_to_file(user_id, current_user)
 
         except Exception as e:
-            logger.error(f"Error actualizando usuario {user_id}: {e}")
+            logger.warning(f"Error actualizando usuario {user_id} en MongoDB, usando fallback: {e}")
+            # Fallback a archivo local
+            try:
+                current_user = self._get_user_from_file(user_id)
+                current_user.update(data)
+                self._save_user_to_file(user_id, current_user)
+            except Exception as e2:
+                logger.error(f"Error crítico actualizando usuario {user_id}: {e2}")
 
     def is_founder(self, user_id: str) -> bool:
         """Verificar si es fundador"""
