@@ -29,6 +29,13 @@ class MongoDatabase:
         elif not self._validate_mongodb_url(self.connection_url):
             logger.error("❌ La MONGODB_URL proporcionada no es válida.")
 
+        self.staff_roles = {}
+        self.check_chats = {}
+        self.pending_checks = {}
+        self.deleted_links = {}
+        self.admin_log_channels = {}
+        self.admin_action_logs = []
+
     async def connect(self) -> bool:
         """Conectar a MongoDB Atlas usando variables de entorno de Secrets"""
         try:
@@ -39,7 +46,7 @@ class MongoDatabase:
                 logger.error("   - MONGODB_URL: Tu cadena de conexión de MongoDB Atlas")
                 logger.error("   - MONGODB_DB_NAME: Nombre de tu base de datos (opcional)")
                 return False
-            
+
             if not self._validate_mongodb_url(self.connection_url):
                 logger.error("❌ La MONGODB_URL proporcionada no es válida.")
                 return False
@@ -441,7 +448,7 @@ class MongoDatabase:
 
             if deep_clean:
                 # Limpieza profunda: más criterios de eliminación
-                
+
                 # Limpiar todos los logs más antiguos (más agresivo)
                 all_logs_result = self.collections['logs'].delete_many({
                     "timestamp": {"$lt": cutoff_iso}
@@ -495,12 +502,12 @@ class MongoDatabase:
                 return {}
 
             collection = self.collections[collection_name]
-            
+
             # Criterios por defecto basados en fecha
             if filter_criteria is None:
                 cutoff_date = datetime.now() - timedelta(days=days)
                 cutoff_iso = cutoff_date.isoformat()
-                
+
                 # Criterios por defecto según la colección
                 if collection_name == 'logs':
                     filter_criteria = {"timestamp": {"$lt": cutoff_iso}}
@@ -522,7 +529,7 @@ class MongoDatabase:
 
             # Ejecutar eliminación
             result = collection.delete_many(filter_criteria)
-            
+
             results = {
                 'collection': collection_name,
                 'deleted_count': result.deleted_count,
@@ -607,6 +614,68 @@ class MongoDatabase:
                 logger.info("✅ Conexión a MongoDB cerrada")
         except Exception as e:
             logger.error(f"Error cerrando conexión: {e}")
+
+    def extract_links_from_text(self, text: str) -> list:
+        """Detectar cualquier tipo de enlace, incluso camuflado"""
+        import re
+
+        link_patterns = [
+            r'https?://\S+', r'www\.\S+',
+            r'\b\w+\.(com|net|org|io|co|me|ly|gg|tv|tk|ml|ga|cf|gl)(/[^\s]*)?',
+            r't\.me/\S+', r'telegram\.me/\S+', r'tg://\S+', r'discord\.gg/\S+',
+            r'youtu\.be/\S+', r'youtube\.com/\S+', r'bit\.ly/\S+',
+            r'tinyurl\.com/\S+', r'[a-zA-Z0-9]{2,}(https?://\S+)',
+            r'[a-zA-Z0-9]{2,}(www\.\S+)',
+        ]
+
+        links = []
+        for pattern in link_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            if matches:
+                if isinstance(matches[0], tuple):
+                    links.extend(["".join(m) for m in matches])
+                else:
+                    links.extend(matches)
+
+        return list(set(links))
+
+    def save_deleted_link(self, user_id: str, username: str, chat_id: str, message_text: str):
+        """Guardar información de link eliminado"""
+        try:
+            link_id = str(len(self.deleted_links) + 1).zfill(6)
+
+            self.deleted_links[link_id] = {
+                'user_id': user_id,
+                'username': username,
+                'chat_id': chat_id,
+                'message_content': message_text,
+                'deleted_at': datetime.now().isoformat(),
+                'detected_links': self.extract_links_from_text(message_text)
+            }
+            return link_id
+        except Exception as e:
+            logger.error(f"Error guardando link eliminado: {e}")
+            return None
+
+    def get_deleted_links_by_user(self, user_id: str) -> list:
+        """Obtener historial de links eliminados de un usuario"""
+        try:
+            user_links = []
+            for link_id, data in self.deleted_links.items():
+                if data['user_id'] == user_id:
+                    user_links.append({
+                        'id': link_id,
+                        'deleted_at': data['deleted_at'],
+                        'links': data['detected_links'],
+                        'message': data['message_content'][:100] + '...' if len(data['message_content']) > 100 else data['message_content']
+                    })
+
+            # Ordenar por fecha más reciente
+            user_links.sort(key=lambda x: x['deleted_at'], reverse=True)
+            return user_links
+        except Exception as e:
+            logger.error(f"Error obteniendo links eliminados: {e}")
+            return []
 
 # Función para migrar datos existentes
 def migrate_json_to_mongodb_sync(json_file: str = 'bot_data.json'):
@@ -700,4 +769,4 @@ async def migrate_json_to_mongodb(json_file: str = 'bot_data.json'):
         await mongo_db.close_connection()
 
     except Exception as e:
-        logger.error(f"Error en migración: {e}") 
+        logger.error(f"Error en migración: {e}")
