@@ -94,8 +94,10 @@ class MongoDatabase:
                 logger.warning("⚠️ Error de red MongoDB - verificar conexión")
             else:
                 logger.warning(f"⚠️ Error MongoDB: {str(e)[:100]}")
-            
+
             self.connection_status = False
+            # Forzar fallback a archivo local cuando MongoDB falla
+            logger.info("🔄 Usando modo fallback con archivo local")
             return False
 
     async def _create_indexes(self):
@@ -179,12 +181,22 @@ class MongoDatabase:
                 if user:
                     # Remover _id de MongoDB para compatibilidad
                     user.pop('_id', None)
+                    # Asegurar campos obligatorios
+                    user.setdefault('total_checked', 0)
+                    user.setdefault('total_generated', 0)
+                    user.setdefault('credits', 10)
+                    user.setdefault('warns', 0)
+                    user.setdefault('premium', False)
                     return user
                 else:
                     # Crear usuario nuevo en MongoDB
                     default_user = self._get_default_user(user_id)
-                    self.collections['users'].insert_one(default_user)
-                    return default_user
+                    try:
+                        self.collections['users'].insert_one(default_user.copy())
+                        return default_user
+                    except Exception as insert_error:
+                        logger.warning(f"Error insertando usuario en MongoDB: {insert_error}")
+                        return self._get_user_from_file(user_id)
             else:
                 # Fallback a archivo local
                 return self._get_user_from_file(user_id)
@@ -217,12 +229,12 @@ class MongoDatabase:
                     users = data.get('users', {})
                     if user_id in users:
                         return users[user_id]
-            
+
             # Si no existe, crear usuario por defecto
             default_user = self._get_default_user(user_id)
             self._save_user_to_file(user_id, default_user)
             return default_user
-            
+
         except Exception as e:
             logger.error(f"Error leyendo archivo local: {e}")
             return self._get_default_user(user_id)
@@ -234,15 +246,15 @@ class MongoDatabase:
             if os.path.exists('bot_data.json'):
                 with open('bot_data.json', 'r') as f:
                     data = json.load(f)
-            
+
             if 'users' not in data:
                 data['users'] = {}
-            
+
             data['users'][user_id] = user_data
-            
+
             with open('bot_data.json', 'w') as f:
                 json.dump(data, f, indent=2)
-                
+
         except Exception as e:
             logger.error(f"Error guardando en archivo local: {e}")
 
@@ -254,11 +266,13 @@ class MongoDatabase:
 
             if self.connection_status and self.collections:
                 # Intentar actualizar en MongoDB
-                self.collections['users'].update_one(
+                result = self.collections['users'].update_one(
                     {"user_id": user_id},
                     {"$set": data},
                     upsert=True
                 )
+                if result.modified_count == 0 and result.upserted_id is None:
+                    logger.warning(f"No se actualizó ningún documento para usuario {user_id}")
             else:
                 # Fallback a archivo local
                 current_user = self._get_user_from_file(user_id)
@@ -272,8 +286,17 @@ class MongoDatabase:
                 current_user = self._get_user_from_file(user_id)
                 current_user.update(data)
                 self._save_user_to_file(user_id, current_user)
+                logger.info(f"Usuario {user_id} actualizado exitosamente en archivo local")
             except Exception as e2:
                 logger.error(f"Error crítico actualizando usuario {user_id}: {e2}")
+                # Crear usuario con datos mínimos como último recurso
+                try:
+                    default_user = self._get_default_user(user_id)
+                    default_user.update(data)
+                    self._save_user_to_file(user_id, default_user)
+                    logger.info(f"Usuario {user_id} creado con datos por defecto")
+                except Exception as e3:
+                    logger.error(f"Error catastrófico creando usuario {user_id}: {e3}")
 
     def is_founder(self, user_id: str) -> bool:
         """Verificar si es fundador"""
