@@ -1028,6 +1028,16 @@ class Database:
             user_data = self.users[user_id]
             logger.info(f"Usuario {user_id} cargado - premium: {user_data.get('premium', False)}, until: {user_data.get('premium_until', 'None')}")
 
+            # Asegurar que todos los campos necesarios existan
+            if 'total_checked' not in user_data:
+                user_data['total_checked'] = 0
+            if 'total_generated' not in user_data:
+                user_data['total_generated'] = 0
+            if 'credits' not in user_data:
+                user_data['credits'] = 10
+            if 'warns' not in user_data:
+                user_data['warns'] = 0
+
         return self.users[user_id]
 
     def update_user(self, user_id: str, data: dict):
@@ -1689,7 +1699,7 @@ def group_only(func):
 
 
 # Decorador para verificar créditos (solo para live)
-def require_credits_for_live(credits_needed: int = 3):
+def require_credits_for_live(credits_needed: int = 4):
 
     def decorator(func):
 
@@ -1700,20 +1710,38 @@ def require_credits_for_live(credits_needed: int = 3):
             if update.effective_user.id in ADMIN_IDS:
                 return await func(update, context)
 
-            user_data = db.get_user(user_id)
+            try:
+                user_data = db.get_user(user_id)
 
-            if user_data['credits'] < credits_needed:
+                # Asegurar que tenga el campo credits
+                if 'credits' not in user_data:
+                    user_data['credits'] = 10
+
+                if user_data['credits'] < credits_needed:
+                    await update.message.reply_text(
+                        f"❌ **Créditos insuficientes**\n\n"
+                        f"Necesitas: {credits_needed} créditos\n"
+                        f"Tienes: {user_data['credits']} créditos\n\n"
+                        f"Usa /loot para créditos gratis o /audit para más información",
+                        parse_mode=ParseMode.MARKDOWN)
+                    return
+
+                # Descontar créditos solo a usuarios normales
+                try:
+                    db.update_user(user_id,
+                                   {'credits': user_data['credits'] - credits_needed})
+                except Exception as e:
+                    logger.error(f"Error descontando créditos: {e}")
+                    # Continuar sin descontar si hay error de BD
+
+            except Exception as e:
+                logger.error(f"Error en verificación de créditos: {e}")
+                # En caso de error, permitir el uso pero avisar
                 await update.message.reply_text(
-                    f"❌ **Créditos insuficientes**\n\n"
-                    f"Necesitas: {credits_needed} créditos\n"
-                    f"Tienes: {user_data['credits']} créditos\n\n"
-                    f"Usa /loot para créditos gratis o /audit para más información",
+                    "⚠️ **Sistema de créditos temporal**\n"
+                    "Procesando tu solicitud...", 
                     parse_mode=ParseMode.MARKDOWN)
-                return
 
-            # Descontar créditos solo a usuarios normales
-            db.update_user(user_id,
-                           {'credits': user_data['credits'] - credits_needed})
             return await func(update, context)
 
         return wrapper
@@ -2110,7 +2138,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     premium_status = "ACTIVO" if user_data.get('premium', False) else "INACTIVO"
     credits_display = user_data['credits'] if not is_admin else '∞'
 
-    welcome_text = f"╔═⟦ 🧬 BIENVENID@ {update.effective_user.first_name} - PANEL CHLV ⟧═╗\n"
+    welcome_text = f"╔═⟦ 🧬 BIENVENID@ {update.effective_user.first_name} - PANEL SHAD ═╗\n"
     welcome_text += f"║ 💳 Créditos actuales: {credits_display}\n"
     welcome_text += f"║ 👑 Modo PREMIUM: {premium_status}\n"
     welcome_text += "╚═════════════════════════════════╝\n\n"
@@ -2429,7 +2457,7 @@ async def credits_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response += "└─────────────────────────────┘\n\n"
 
     response += f"🤖 **Usuario:** @{update.effective_user.username or update.effective_user.first_name}\n"
-    response += f"📡 **Nodo:** "
+    response += f"📡 **Nodo:** ONLINE"
 
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
@@ -2442,10 +2470,18 @@ async def inject_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @group_only
 @require_credits_for_live(4)
 async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Verificar tarjetas en vivo - Cuesta 3 créditos"""
+    """Verificar tarjetas en vivo - Cuesta 4 créditos"""
     user_id = str(update.effective_user.id)
     user_data = db.get_user(user_id)
     is_admin = update.effective_user.id in ADMIN_IDS
+
+    # Asegurar que user_data tenga todos los campos necesarios
+    if 'total_checked' not in user_data:
+        user_data['total_checked'] = 0
+    if 'total_generated' not in user_data:
+        user_data['total_generated'] = 0
+    if 'credits' not in user_data:
+        user_data['credits'] = 10
 
     args = context.args
     if not args:
@@ -2666,10 +2702,14 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     final_response += f"    ▒ TIMESTAMP: {datetime.now().strftime('%H:%M:%S')}\n"
     final_response += f"    ▒ OPERATOR: @{update.effective_user.username or update.effective_user.first_name}"
 
-    # Actualizar estadísticas del usuario
-    db.update_user(
-        user_id,
-        {'total_checked': user_data['total_checked'] + len(cards_list)})
+    # Actualizar estadísticas del usuario con manejo de errores
+    try:
+        db.update_user(
+            user_id,
+            {'total_checked': user_data['total_checked'] + len(cards_list)})
+    except Exception as e:
+        logger.error(f"❌ Error importante: {e}")
+        # Continuar sin actualizar estadísticas si hay error
 
     # Enviar respuesta final con mejor manejo de errores
     try:
@@ -2681,14 +2721,29 @@ async def live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(final_response)
         except Exception as e2:
             logger.error(f"Error enviando mensaje de respuesta: {e2}")
-            # Mensaje de emergencia ultra-simple
+            # Mensaje de emergencia con resultados básicos
             try:
-                simple_msg = f"Verificación completada: {len([r for r in results if r['is_live']])}/{total_cards} LIVE"
-                await update.message.reply_text(simple_msg)
-            except:
-                logger.error(
-                    "Error crítico: No se pudo enviar ningún mensaje de respuesta"
-                )
+                live_count = len([r for r in results if r['is_live']])
+                emergency_response = f"✅ **VERIFICACIÓN COMPLETADA**\n\n"
+                emergency_response += f"📊 **Resultados:** {live_count}/{total_cards} LIVE\n"
+                emergency_response += f"👤 **Usuario:** @{update.effective_user.username or update.effective_user.first_name}\n\n"
+
+                # Mostrar resultados individuales si hay espacio
+                if len(results) <= 5:  # Solo si son pocas tarjetas
+                    for i, result in enumerate(results, 1):
+                        status_emoji = "✅" if result['is_live'] else "❌"
+                        card_display = result['card_data'][:4] + "****" + result['card_data'].split('|')[0][-4:]
+                        emergency_response += f"{status_emoji} {card_display}\n"
+
+                await update.message.reply_text(emergency_response, parse_mode=ParseMode.MARKDOWN)
+            except Exception as e3:
+                logger.error(f"Error crítico enviando mensaje de emergencia: {e3}")
+                # Último recurso: mensaje ultra-simple sin markdown
+                try:
+                    simple_msg = f"Verificacion completada: {len([r for r in results if r['is_live']])}/{total_cards} LIVE"
+                    await update.message.reply_text(simple_msg)
+                except:
+                    logger.error("Error crítico: No se pudo enviar ningún mensaje de respuesta")
 
 
 async def direccion_command(update: Update,
@@ -4685,7 +4740,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             target_user_id = args[0]
-            
+
             # Verificar que sea un ID válido de Telegram (no mayor a 2^53)
             try:
                 user_id_int = int(target_user_id)
@@ -4880,7 +4935,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             error_response += "• /id - Tu información\n"
             error_response += "• /id 123456789 - Info de usuario\n"
             error_response += "• /id (respondiendo a mensaje) - Info del usuario"
-            
+
             await update.message.reply_text(error_response)
         except Exception as critical_error:
             # Si ni siquiera puede enviar el mensaje de error
