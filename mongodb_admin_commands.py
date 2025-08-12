@@ -54,39 +54,39 @@ async def mongodb_status_command(update: Update, context: ContextTypes.DEFAULT_T
             config_emoji = "🟡"
             config_text = "CONFIGURADO (FORMATO INVÁLIDO)"
 
-    response = f"📊 **ESTADO DE MONGODB ATLAS** 📊\n\n"
-    response += f"⚙️ **Configuración:** {config_emoji} {config_text}\n"
+    response = f"📊 *ESTADO DE MONGODB ATLAS* 📊\n\n"
+    response += f"⚙️ *Configuración:* {config_emoji} {config_text}\n"
 
     if mongodb_url and not url_valid:
-        response += f"⚠️ **URL Format:** Inválido\n"
+        response += f"⚠️ *URL Format:* Inválido\n"
 
-    response += f"🔗 **Estado:** {status_emoji} {status_text}\n"
-    response += f"🗄️ **Base de datos:** {connection_info['database']}\n"
-    response += f"🔄 **Intentos reconexión:** {connection_info['reconnect_attempts']}/{connection_info['max_attempts']}\n\n"
+    response += f"🔗 *Estado:* {status_emoji} {status_text}\n"
+    response += f"🗄️ *Base de datos:* {connection_info['database']}\n"
+    response += f"🔄 *Intentos reconexión:* {connection_info['reconnect_attempts']}/{connection_info['max_attempts']}\n\n"
 
     if not mongodb_url:
-        response += f"⚠️ **VARIABLES FALTANTES:**\n"
-        response += f"• MONGODB_URL no configurado en Secrets\n"
+        response += f"⚠️ *VARIABLES FALTANTES:*\n"
+        response += f"• MONGODB\\_URL no configurado en Secrets\n"
         response += f"• Configura tu cadena de conexión Atlas\n\n"
     elif not url_valid:
-        response += f"⚠️ **URL INVÁLIDA:**\n"
+        response += f"⚠️ *URL INVÁLIDA:*\n"
         response += f"• Formato de URL incorrecto\n"
         response += f"• Formatos válidos:\n"
-        response += f"  - mongodb+srv://user:pass@cluster.mongodb.net/db\n"
-        response += f"  - mongodb://user:pass@host:port/db\n\n"
+        response += f"  \\- mongodb\\+srv://user:pass@cluster\\.mongodb\\.net/db\n"
+        response += f"  \\- mongodb://user:pass@host:port/db\n\n"
 
     if connection_info['last_attempt']:
         last_attempt = datetime.fromisoformat(connection_info['last_attempt'])
-        response += f"⏰ **Último intento:** {last_attempt.strftime('%d/%m/%Y %H:%M:%S')}\n\n"
+        response += f"⏰ *Último intento:* {last_attempt.strftime('%d/%m/%Y %H:%M:%S')}\n\n"
 
-    response += f"📈 **ESTADÍSTICAS:**\n"
-    response += f"👥 **Total usuarios:** {stats.get('total_users', 0)}\n"
-    response += f"💎 **Usuarios premium:** {stats.get('premium_users', 0)}\n"
-    response += f"👑 **Staff total:** {stats.get('total_staff', 0)}\n"
-    response += f"🏛️ **Fundadores:** {stats.get('total_founders', 0)}\n"
-    response += f"📝 **Logs totales:** {stats.get('total_logs', 0)}\n\n"
+    response += f"📈 *ESTADÍSTICAS:*\n"
+    response += f"👥 *Total usuarios:* {stats.get('total_users', 0)}\n"
+    response += f"💎 *Usuarios premium:* {stats.get('premium_users', 0)}\n"
+    response += f"👑 *Staff total:* {stats.get('total_staff', 0)}\n"
+    response += f"🏛️ *Fundadores:* {stats.get('total_founders', 0)}\n"
+    response += f"📝 *Logs totales:* {stats.get('total_logs', 0)}\n\n"
 
-    response += f"📂 **Colecciones:**\n"
+    response += f"📂 *Colecciones:*\n"
     for collection in connection_info.get('collections', []):
         response += f"• {collection}\n"
 
@@ -147,20 +147,20 @@ async def mongodb_reconnect_command(update: Update, context: ContextTypes.DEFAUL
 
     if success:
         await processing_msg.edit_text(
-            "✅ **RECONEXIÓN EXITOSA** ✅\n\n"
-            "🟢 **Estado:** Conectado\n"
-            "⚡ **Base de datos:** Lista para usar\n"
-            "🔄 **Intentos:** Reiniciados\n\n"
-            "💡 El bot puede continuar operando normally",
+            "✅ *RECONEXIÓN EXITOSA* ✅\n\n"
+            "🟢 *Estado:* Conectado\n"
+            "⚡ *Base de datos:* Lista para usar\n"
+            "🔄 *Intentos:* Reiniciados\n\n"
+            "💡 El bot puede continuar operando normalmente",
             parse_mode=ParseMode.MARKDOWN
         )
     else:
         await processing_msg.edit_text(
-            "❌ **ERROR EN RECONEXIÓN** ❌\n\n"
-            "🔴 **Estado:** Desconectado\n"
-            "⚠️ **Problema:** No se pudo establecer conexión\n\n"
-            "🛠️ **Verificar:**\n"
-            "• Variables de entorno (MONGODB_URL)\n"
+            "❌ *ERROR EN RECONEXIÓN* ❌\n\n"
+            "🔴 *Estado:* Desconectado\n"
+            "⚠️ *Problema:* No se pudo establecer conexión\n\n"
+            "🛠️ *Verificar:*\n"
+            "• Variables de entorno \\(MONGODB\\_URL\\)\n"
             "• Conexión a internet\n"
             "• Estado de MongoDB Atlas\n"
             "• Configuración de IP whitelist",
@@ -203,12 +203,12 @@ async def mongodb_cleanup_command(update: Update, context: ContextTypes.DEFAULT_
         deep_clean = days >= 60
         results = await db.cleanup_old_data(days, deep_clean=deep_clean)
 
-        response = f"✅ **LIMPIEZA COMPLETADA** ✅\n\n"
-        response += f"📊 **Resultados:**\n"
+        response = f"✅ *LIMPIEZA COMPLETADA* ✅\n\n"
+        response += f"📊 *Resultados:*\n"
         response += f"• Logs eliminados: {results.get('logs_deleted', 0)}\n"
         response += f"• Sesiones eliminadas: {results.get('sessions_deleted', 0)}\n"
         response += f"• Usuarios inactivos: {results.get('inactive_users_deleted', 0)}\n\n"
-        response += f"🗃️ **Período:** Datos > {days} días"
+        response += f"🗃️ *Período:* Datos > {days} días"
 
         await processing_msg.edit_text(response, parse_mode=ParseMode.MARKDOWN)
         return
