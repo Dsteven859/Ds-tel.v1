@@ -1009,36 +1009,138 @@ class Database:
             return None
 
     def get_user(self, user_id: str):
-        if user_id not in self.users:
-            self.users[user_id] = {
-                'credits': 10,  # Créditos iniciales
+        """Obtener datos de usuario de manera ultra-robusta"""
+        try:
+            # Validar que user_id sea válido
+            if not user_id or not isinstance(user_id, str):
+                logger.error(f"ID de usuario inválido: {user_id}")
+                return None
+            
+            # Limpiar user_id por seguridad
+            user_id = str(user_id).strip()
+            if not user_id:
+                logger.error("ID de usuario vacío después de limpiar")
+                return None
+
+            if user_id not in self.users:
+                # Crear nuevo usuario con datos por defecto
+                default_user = {
+                    'credits': 10,  # Créditos iniciales
+                    'premium': False,
+                    'premium_until': None,
+                    'last_bonus': None,
+                    'last_game': None,  # Para límite de juegos
+                    'total_generated': 0,
+                    'total_checked': 0,
+                    'join_date': datetime.now().isoformat(),
+                    'warns': 0  # Added for anti-spam
+                }
+                self.users[user_id] = default_user
+                try:
+                    self.save_data()
+                except Exception as save_error:
+                    logger.error(f"Error guardando nuevo usuario {user_id}: {save_error}")
+                logger.info(f"Nuevo usuario creado: {user_id} con premium: False")
+                return self.users[user_id]
+            else:
+                # Usuario existente - validar y limpiar datos
+                user_data = self.users[user_id]
+                
+                # Verificar que user_data sea un diccionario
+                if not isinstance(user_data, dict):
+                    logger.error(f"Datos de usuario {user_id} corruptos: {type(user_data)}")
+                    # Recrear usuario con datos por defecto
+                    self.users[user_id] = {
+                        'credits': 10,
+                        'premium': False,
+                        'premium_until': None,
+                        'last_bonus': None,
+                        'last_game': None,
+                        'total_generated': 0,
+                        'total_checked': 0,
+                        'join_date': datetime.now().isoformat(),
+                        'warns': 0
+                    }
+                    try:
+                        self.save_data()
+                    except:
+                        pass
+                    return self.users[user_id]
+
+                # Función helper para validar y convertir valores
+                def safe_convert(value, target_type, default):
+                    try:
+                        if value is None:
+                            return default
+                        if target_type == int:
+                            return int(float(value))  # Convertir float a int si es necesario
+                        elif target_type == bool:
+                            return bool(value)
+                        elif target_type == str:
+                            return str(value) if value else default
+                        else:
+                            return value
+                    except (ValueError, TypeError, OverflowError):
+                        return default
+
+                # Validar y corregir cada campo individualmente
+                user_data['total_checked'] = safe_convert(user_data.get('total_checked'), int, 0)
+                user_data['total_generated'] = safe_convert(user_data.get('total_generated'), int, 0)
+                user_data['credits'] = safe_convert(user_data.get('credits'), int, 10)
+                user_data['warns'] = safe_convert(user_data.get('warns'), int, 0)
+                user_data['premium'] = safe_convert(user_data.get('premium'), bool, False)
+                
+                # Validar campos de string/fecha
+                if 'join_date' not in user_data or not user_data['join_date']:
+                    user_data['join_date'] = datetime.now().isoformat()
+                
+                # Validar premium_until
+                if 'premium_until' not in user_data:
+                    user_data['premium_until'] = None
+                elif user_data['premium_until'] and not isinstance(user_data['premium_until'], str):
+                    user_data['premium_until'] = None
+
+                # Asegurar que campos opcionales existan
+                if 'last_bonus' not in user_data:
+                    user_data['last_bonus'] = None
+                if 'last_game' not in user_data:
+                    user_data['last_game'] = None
+
+                # Validar rangos razonables
+                if user_data['credits'] < 0:
+                    user_data['credits'] = 0
+                if user_data['credits'] > 1000000:  # Límite máximo razonable
+                    user_data['credits'] = 1000000
+                
+                if user_data['total_generated'] < 0:
+                    user_data['total_generated'] = 0
+                if user_data['total_checked'] < 0:
+                    user_data['total_checked'] = 0
+                if user_data['warns'] < 0:
+                    user_data['warns'] = 0
+                if user_data['warns'] > 100:  # Límite máximo de warns
+                    user_data['warns'] = 100
+
+                # Log solo para casos problemáticos
+                if logger.level <= logging.DEBUG:
+                    logger.debug(f"Usuario {user_id} cargado - premium: {user_data.get('premium', False)}, until: {user_data.get('premium_until', 'None')}")
+
+                return user_data
+
+        except Exception as e:
+            logger.error(f"Error crítico en get_user para {user_id}: {e}")
+            # Devolver datos por defecto en caso de error crítico
+            return {
+                'credits': 10,
                 'premium': False,
                 'premium_until': None,
                 'last_bonus': None,
-                'last_game': None,  # Para límite de juegos
+                'last_game': None,
                 'total_generated': 0,
                 'total_checked': 0,
                 'join_date': datetime.now().isoformat(),
-                'warns': 0  # Added for anti-spam
+                'warns': 0
             }
-            self.save_data()
-            logger.info(f"Nuevo usuario creado: {user_id} con premium: False")
-        else:
-            # Log para depuración
-            user_data = self.users[user_id]
-            logger.info(f"Usuario {user_id} cargado - premium: {user_data.get('premium', False)}, until: {user_data.get('premium_until', 'None')}")
-
-            # Asegurar que todos los campos necesarios existan
-            if 'total_checked' not in user_data:
-                user_data['total_checked'] = 0
-            if 'total_generated' not in user_data:
-                user_data['total_generated'] = 0
-            if 'credits' not in user_data:
-                user_data['credits'] = 10
-            if 'warns' not in user_data:
-                user_data['warns'] = 0
-
-        return self.users[user_id]
 
     def update_user(self, user_id: str, data: dict):
         user = self.get_user(user_id)
@@ -2401,65 +2503,115 @@ async def gen_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def credits_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver créditos del usuario con diseño mejorado"""
-    user_id = str(update.effective_user.id)
-    user_data = db.get_user(user_id)
-    is_admin = update.effective_user.id in ADMIN_IDS
+    try:
+        user_id = str(update.effective_user.id)
+        user_data = db.get_user(user_id)
+        is_admin = update.effective_user.id in ADMIN_IDS
 
-    # Determinar estado premium
-    premium_status = "❌ INACTIVO"
-    premium_details = ""
-    if user_data.get('premium', False):
-        premium_until = datetime.fromisoformat(user_data['premium_until'])
-        days_left = (premium_until - datetime.now()).days
-        premium_status = "✅ ACTIVO"
-        premium_details = f"⏳ Expira en: {days_left} días"
+        # Validar y corregir datos del usuario
+        if not isinstance(user_data.get('credits'), (int, float)):
+            user_data['credits'] = 10
+        if not isinstance(user_data.get('total_generated'), (int, float)):
+            user_data['total_generated'] = 0
+        if not isinstance(user_data.get('total_checked'), (int, float)):
+            user_data['total_checked'] = 0
 
-    # Calcular actividad total
-    total_activity = user_data['total_generated'] + user_data['total_checked']
+        # Determinar estado premium con validación
+        premium_status = "❌ INACTIVO"
+        premium_details = ""
+        try:
+            if user_data.get('premium', False):
+                premium_until = user_data.get('premium_until')
+                if premium_until:
+                    if isinstance(premium_until, str):
+                        premium_until_date = datetime.fromisoformat(premium_until)
+                    else:
+                        premium_until_date = premium_until
+                    days_left = max(0, (premium_until_date - datetime.now()).days)
+                    premium_status = "✅ ACTIVO"
+                    premium_details = f"⏳ Expira en: {days_left} días"
+        except Exception as e:
+            logger.warning(f"Error calculando premium para {user_id}: {e}")
 
-    # Mostrar créditos (infinitos para admins)
-    credits_display = f"{user_data['credits']:,}" if not is_admin else "∞ (Admin)"
+        # Calcular actividad total con validación
+        total_activity = int(user_data.get('total_generated', 0)) + int(user_data.get('total_checked', 0))
 
-    response = "╔═══▣ DATA NODE ACCESSED ▣═══╗\n"
-    response += "║                            \n"
-    response += f"║ 💰 Créditos disponibles: {credits_display:<7}\n"
-    response += f"║ 📤 Tarjetas generadas: {user_data['total_generated']:<9,}\n"
-    response += f"║ 📥 Tarjetas validadas: {user_data['total_checked']:<9,}\n"
-    response += "║                            \n"
-    response += f"║ 🎖️ Estado Premium: {premium_status:<12}\n"
-    if premium_details:
-        response += f"║ {premium_details:<27}\n"
-    response += "║                            \n"
-    response += f"║ ⚡ Actividad total: {total_activity:<11,}\n"
+        # Mostrar créditos (infinitos para admins) con validación
+        credits_display = f"{int(user_data['credits']):,}" if not is_admin else "∞ (Admin)"
 
-    # Tiempo en el bot
-    join_date = datetime.fromisoformat(user_data['join_date'])
-    days_active = (datetime.now() - join_date).days
-    response += f"║ 📅 Días activo: {days_active:<15}\n"
+        response = "╔═══▣ DATA NODE ACCESSED ▣═══╗\n"
+        response += "║                            \n"
+        response += f"║ 💰 Créditos disponibles: {credits_display:<7}\n"
+        response += f"║ 📤 Tarjetas generadas: {int(user_data['total_generated']):<9,}\n"
+        response += f"║ 📥 Tarjetas validadas: {int(user_data['total_checked']):<9,}\n"
+        response += "║                            \n"
+        response += f"║ 🎖️ Estado Premium: {premium_status:<12}\n"
+        if premium_details:
+            response += f"║ {premium_details:<27}\n"
+        response += "║                            \n"
+        response += f"║ ⚡ Actividad total: {total_activity:<11,}\n"
 
-    response += "║                            \n"
-    response += "║ 💡 Tip: Canjea energía    \n"
-    response += "║     con /loot diario      \n"
-    response += "╚══════════════════════════╝\n\n"
+        # Tiempo en el bot con validación
+        try:
+            join_date_str = user_data.get('join_date')
+            if join_date_str:
+                if isinstance(join_date_str, str):
+                    join_date = datetime.fromisoformat(join_date_str)
+                else:
+                    join_date = join_date_str
+                days_active = max(0, (datetime.now() - join_date).days)
+            else:
+                days_active = 0
+        except Exception as e:
+            logger.warning(f"Error calculando días activos para {user_id}: {e}")
+            days_active = 0
 
-    # Barra de progreso para créditos (solo para no-admins)
-    if not is_admin:
-        credit_level = min(user_data['credits'] // 10, 10)  # Max 10 barras
-        progress_bar = "█" * credit_level + "░" * (10 - credit_level)
-        response += f"🔋 **Nivel de Energía:** [{progress_bar}] {user_data['credits']}/100+\n\n"
+        response += f"║ 📅 Días activo: {days_active:<15}\n"
+        response += "║                            \n"
+        response += "║ 💡 Tip: Canjea energía    \n"
+        response += "║     con /loot diario      \n"
+        response += "╚══════════════════════════╝\n\n"
 
-    # Comandos de acceso rápido
-    response += "⚡ **ACCIONES RÁPIDAS:**\n"
-    response += "┌─────────────────────────────┐\n"
-    response += "│ `/loot` - Recompensa diaria │\n"
-    response += "│ `/simulator` - Casino de riesgo │\n"
-    response += "│ `/transmit` - Transferir CR    │\n"
-    response += "└─────────────────────────────┘\n\n"
+        # Barra de progreso para créditos (solo para no-admins) con validación
+        if not is_admin:
+            try:
+                credit_level = min(int(user_data['credits']) // 10, 10)  # Max 10 barras
+                progress_bar = "█" * credit_level + "░" * (10 - credit_level)
+                response += f"🔋 **Nivel de Energía:** [{progress_bar}] {int(user_data['credits'])}/100+\n\n"
+            except Exception as e:
+                logger.warning(f"Error creando barra de progreso para {user_id}: {e}")
+                response += f"🔋 **Nivel de Energía:** [██████░░░░] {int(user_data['credits'])}/100+\n\n"
 
-    response += f"🤖 **Usuario:** @{update.effective_user.username or update.effective_user.first_name}\n"
-    response += f"📡 **Nodo:** ONLINE"
+        # Comandos de acceso rápido
+        response += "⚡ **ACCIONES RÁPIDAS:**\n"
+        response += "┌─────────────────────────────┐\n"
+        response += "│ `/loot` - Recompensa diaria │\n"
+        response += "│ `/simulator` - Casino de riesgo │\n"
+        response += "│ `/transmit` - Transferir CR    │\n"
+        response += "└─────────────────────────────┘\n\n"
 
-    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+        response += f"🤖 **Usuario:** @{update.effective_user.username or update.effective_user.first_name}\n"
+        response += f"📡 **Nodo:** ONLINE"
+
+        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+    except Exception as e:
+        logger.error(f"Error crítico en credits_command para usuario {update.effective_user.id}: {e}")
+        try:
+            # Respuesta de emergencia simplificada
+            await update.message.reply_text(
+                "❌ **ERROR TEMPORAL** ❌\n\n"
+                "Ha ocurrido un error al acceder a tu información.\n"
+                "Por favor intenta nuevamente en unos segundos.\n\n"
+                "Si el problema persiste, contacta a los administradores.",
+                parse_mode=ParseMode.MARKDOWN)
+        except Exception as emergency_error:
+            logger.error(f"Error crítico absoluto en credits_command: {emergency_error}")
+            # Último recurso sin markdown
+            try:
+                await update.message.reply_text("❌ Error temporal. Intenta /wallet nuevamente.")
+            except:
+                logger.error("No se pudo enviar ningún mensaje de error para /wallet")
 
 # Alias para inject
 async def inject_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3692,7 +3844,6 @@ async def donate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "💡 **Obtén más créditos con:**\n"
             "• `/loot` - Bono diario gratis\n"
             "• `/simulator` - Casino bot\n"
-            "• `/apply_key` - Clave premium"
             "• Contacto con @SteveCHBll para mas creditos",
             parse_mode=ParseMode.MARKDOWN)
         return
@@ -4699,7 +4850,7 @@ async def setpremium_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver información detallada de usuario por ID - Versión corregida y robusta"""
+    """Ver información detallada de usuario por ID - Versión ultra-robusta"""
     try:
         args = context.args
         target_user = None
@@ -4709,7 +4860,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message.reply_to_message and not args:
             try:
                 # Verificar que el mensaje tiene usuario (no es un mensaje del canal)
-                if update.message.reply_to_message.from_user:
+                if hasattr(update.message.reply_to_message, 'from_user') and update.message.reply_to_message.from_user:
                     target_user_id = str(update.message.reply_to_message.from_user.id)
                     target_user = update.message.reply_to_message.from_user
                 else:
@@ -4720,7 +4871,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "Puede ser un mensaje automático del canal.\n\n"
                         "💡 Usa: /id [user_id] para consultar por ID")
                     return
-            except AttributeError:
+            except (AttributeError, TypeError):
                 await update.message.reply_text(
                     "❌ ERROR AL PROCESAR MENSAJE\n\n"
                     "No se pudo obtener información del mensaje.\n\n"
@@ -4728,7 +4879,8 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         elif args:
             # Validar que el argumento sea un ID numérico válido
-            if not args[0].isdigit() or len(args[0]) < 5:
+            arg_clean = str(args[0]).strip()
+            if not arg_clean or not arg_clean.isdigit() or len(arg_clean) < 5:
                 await update.message.reply_text(
                     "❌ ID INVÁLIDO\n\n"
                     "💡 Uso correcto del comando:\n"
@@ -4739,47 +4891,37 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "📝 Nota: El ID debe ser un número de al menos 5 dígitos")
                 return
 
-            target_user_id = args[0]
+            target_user_id = arg_clean
 
             # Verificar que sea un ID válido de Telegram (no mayor a 2^53)
             try:
                 user_id_int = int(target_user_id)
-                if user_id_int > 9007199254740991:  # 2^53 - 1
+                if user_id_int <= 0 or user_id_int > 9007199254740991:  # 2^53 - 1
                     await update.message.reply_text(
-                        "❌ ID DEMASIADO GRANDE\n\n"
-                        "El ID proporcionado excede el límite de Telegram.\n"
+                        "❌ ID FUERA DE RANGO\n\n"
+                        "El ID debe ser un número positivo válido de Telegram.\n"
                         "📋 Ejemplo de ID válido: 123456789")
                     return
-            except ValueError:
+            except (ValueError, OverflowError):
                 await update.message.reply_text(
                     "❌ ID INVÁLIDO\n\n"
-                    "El ID debe ser un número entero.\n"
+                    "El ID debe ser un número entero válido.\n"
                     "📋 Ejemplo: /id 123456789")
                 return
 
+            # Intentar obtener información del usuario de manera más robusta
+            target_user = None
             try:
                 # Intentar obtener información del usuario en el chat actual
                 chat_member = await context.bot.get_chat_member(
                     update.effective_chat.id, int(target_user_id))
-                target_user = chat_member.user
+                if chat_member and hasattr(chat_member, 'user') and chat_member.user:
+                    target_user = chat_member.user
             except Exception as e:
                 error_msg = str(e).lower()
-                if "user not found" in error_msg or "bad request" in error_msg:
-                    await update.message.reply_text(
-                        f"❌ USUARIO NO ENCONTRADO\n\n"
-                        f"🔍 ID buscado: {target_user_id}\n\n"
-                        f"💡 Posibles causas:\n"
-                        f"• El usuario no está en este chat\n"
-                        f"• ID incorrecto o inexistente\n"
-                        f"• El usuario ha abandonado el grupo\n\n"
-                        f"📋 Ejemplo de ID válido: 123456789")
-                else:
-                    await update.message.reply_text(
-                        f"❌ ERROR DE CONEXIÓN\n\n"
-                        f"No se pudo acceder a la información del usuario.\n"
-                        f"Error: {str(e)[:50]}...\n\n"
-                        f"💡 Intenta nuevamente en unos segundos")
-                return
+                # No fallar aquí, solo no tendremos info del usuario de Telegram
+                # Pero podemos mostrar datos de la base de datos
+                logger.info(f"No se pudo obtener info de Telegram para {target_user_id}: {e}")
         else:
             # Si no hay argumentos ni respuesta, mostrar información del usuario que ejecuta el comando
             target_user_id = str(update.effective_user.id)
@@ -4793,159 +4935,189 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "💡 Usa: /id [user_id] para consultar por ID específico")
             return
 
-        # Obtener datos del usuario de la base de datos de manera segura
+        # Obtener datos del usuario de la base de datos de manera ultra-segura
+        user_data = None
         try:
             user_data = db.get_user(target_user_id)
-            if not user_data:
-                await update.message.reply_text(
-                    f"❌ USUARIO NO REGISTRADO\n\n"
-                    f"El usuario {target_user_id} no está en la base de datos del bot.\n\n"
-                    f"💡 El usuario debe usar el bot al menos una vez")
-                return
         except Exception as e:
             logger.error(f"Error obteniendo datos de usuario {target_user_id}: {e}")
+
+        # Si no hay datos de la BD, mostrar mensaje específico
+        if not user_data:
             await update.message.reply_text(
-                "❌ ERROR DE BASE DE DATOS\n\n"
-                "No se pudieron obtener los datos del usuario.\n\n"
-                "💡 Intenta nuevamente en unos segundos")
+                f"❌ USUARIO NO REGISTRADO\n\n"
+                f"El usuario {target_user_id} no está en la base de datos del bot.\n\n"
+                f"💡 El usuario debe usar el bot al menos una vez para registrarse")
             return
 
+        # Función para obtener valor seguro de diccionario
+        def safe_get(data, key, default=0, convert_type=int):
+            try:
+                value = data.get(key, default)
+                if value is None:
+                    return default
+                return convert_type(value)
+            except (ValueError, TypeError, AttributeError):
+                return default
+
+        # Obtener estadísticas de forma ultra-segura
+        credits = safe_get(user_data, 'credits', 0)
+        total_generated = safe_get(user_data, 'total_generated', 0)
+        total_checked = safe_get(user_data, 'total_checked', 0)
+        warns = safe_get(user_data, 'warns', 0)
+
         # Calcular tiempo en servidor de manera segura
+        days_in_server = 0
         try:
-            join_date = datetime.fromisoformat(user_data['join_date'])
-            time_in_server = datetime.now() - join_date
-            days_in_server = max(0, time_in_server.days)
-        except (KeyError, ValueError, TypeError):
+            join_date_str = user_data.get('join_date')
+            if join_date_str:
+                join_date = datetime.fromisoformat(join_date_str)
+                time_in_server = datetime.now() - join_date
+                days_in_server = max(0, time_in_server.days)
+        except (KeyError, ValueError, TypeError, AttributeError):
             days_in_server = 0
 
-        # Obtener información del usuario de forma muy segura
+        # Obtener información del usuario de Telegram de forma ultra-segura
+        username = "Sin username"
+        full_name = f"Usuario {target_user_id}"
         try:
             if target_user:
-                username = f"@{target_user.username}" if getattr(target_user, 'username', None) else "Sin username"
-                first_name = str(getattr(target_user, 'first_name', None) or "Sin nombre")
-                last_name = str(getattr(target_user, 'last_name', None) or "")
+                if hasattr(target_user, 'username') and target_user.username:
+                    username = f"@{target_user.username}"
+                
+                first_name = getattr(target_user, 'first_name', None) or "Sin nombre"
+                last_name = getattr(target_user, 'last_name', None) or ""
                 full_name = f"{first_name} {last_name}".strip()
-            else:
-                username = "Desconocido"
-                full_name = f"Usuario {target_user_id}"
         except Exception as e:
-            logger.warning(f"Error obteniendo info de usuario: {e}")
-            username = "Error"
-            full_name = f"Usuario {target_user_id}"
+            logger.warning(f"Error obteniendo info de Telegram del usuario: {e}")
 
-        # Limpiar caracteres especiales de manera muy segura
-        def clean_text(text):
+        # Limpiar caracteres especiales de manera ultra-segura
+        def ultra_clean_text(text):
             if not text:
                 return "N/A"
             try:
                 # Convertir a string y limpiar caracteres problemáticos
                 cleaned = str(text)
-                cleaned = cleaned.replace('_', ' ')
-                cleaned = cleaned.replace('*', ' ')
-                cleaned = cleaned.replace('[', '(')
-                cleaned = cleaned.replace(']', ')')
-                cleaned = cleaned.replace('`', "'")
-                cleaned = cleaned.replace('\n', ' ')
-                cleaned = cleaned.replace('\r', ' ')
+                # Limpiar caracteres especiales comunes
+                special_chars = ['_', '*', '[', ']', '`', '\n', '\r', '\\', '"', "'"]
+                for char in special_chars:
+                    cleaned = cleaned.replace(char, ' ')
+                # Limpiar espacios múltiples
+                cleaned = ' '.join(cleaned.split())
                 # Limitar longitud para evitar mensajes muy largos
-                return cleaned[:50] if len(cleaned) > 50 else cleaned
+                return cleaned[:40] if len(cleaned) > 40 else cleaned
             except Exception:
-                return "Error"
+                return "Error de texto"
 
-        safe_full_name = clean_text(full_name)
-        safe_username = clean_text(username)
+        safe_full_name = ultra_clean_text(full_name)
+        safe_username = ultra_clean_text(username)
 
-        # Determinar estado premium con manejo de errores robusto
+        # Determinar estado premium con manejo de errores ultra-robusto
         premium_display = "❌"
         try:
-            if user_data.get('premium', False):
+            is_premium = user_data.get('premium', False)
+            if is_premium:
                 premium_until = user_data.get('premium_until')
                 if premium_until:
-                    premium_date = datetime.fromisoformat(premium_until)
-                    days_left = (premium_date - datetime.now()).days
-                    if days_left > 0:
-                        premium_display = f"✅ {days_left}d"
-                    else:
-                        premium_display = f"✅ -{abs(days_left)}d"
+                    try:
+                        premium_date = datetime.fromisoformat(premium_until)
+                        days_left = (premium_date - datetime.now()).days
+                        if days_left > 0:
+                            premium_display = f"✅ {days_left}d"
+                        elif days_left > -30:  # Expirado hace menos de 30 días
+                            premium_display = f"⏰ -{abs(days_left)}d"
+                        else:
+                            premium_display = "❌ Expirado"
+                    except (ValueError, TypeError):
+                        premium_display = "✅ Error fecha"
                 else:
                     premium_display = "✅ ∞"
         except Exception as e:
-            logger.warning(f"Error calculando premium: {e}")
+            logger.warning(f"Error calculando premium para {target_user_id}: {e}")
             premium_display = "❌ Error"
 
-        # Obtener estadísticas de forma muy segura
-        try:
-            credits = int(user_data.get('credits', 0))
-            total_generated = int(user_data.get('total_generated', 0))
-            total_checked = int(user_data.get('total_checked', 0))
-            warns = int(user_data.get('warns', 0))
-        except (ValueError, TypeError):
-            credits = 0
-            total_generated = 0
-            total_checked = 0
-            warns = 0
-
-        # Calcular días desde último bono de manera segura
+        # Calcular días desde último bono de manera ultra-segura
         last_bonus_date = "Nunca"
         try:
-            if user_data.get('last_bonus'):
-                bonus_date = datetime.fromisoformat(user_data['last_bonus'])
+            last_bonus = user_data.get('last_bonus')
+            if last_bonus:
+                bonus_date = datetime.fromisoformat(last_bonus)
                 last_bonus_date = bonus_date.strftime('%d/%m/%Y')
         except Exception:
-            last_bonus_date = "Error"
+            last_bonus_date = "Error fecha"
 
-        # Construir respuesta sin usar Markdown para evitar errores
+        # Construir respuesta de manera ultra-segura (sin Markdown)
         try:
-            response = "╔═══[ USUARIO ACTIVO ]═══╗\n"
-            response += f"║ 🧬 {safe_full_name[:25]} (ID: {target_user_id})\n"
-            response += f"║ 📡 {safe_username[:30]}\n"
-            response += f"║ 🗓️ Registro: {days_in_server} días atrás\n"
-            response += f"╠═════[ ESTADO ]═════╣\n"
-            response += f"║ 💰 Créditos: {credits:,}\n"
-            response += f"║ 🧾 Gen/Verif: {total_generated:,}/{total_checked:,}\n"
-            response += f"║ ⚠️ Warns: {warns} | 👑 Premium: {premium_display}\n"
-            response += f"╠═════[ BONUS INFO ]════╣\n"
-            response += f"║ 🎁 Último bono: {last_bonus_date}\n"
-            response += f"║ 📊 Actividad total: {total_generated + total_checked:,}\n"
-            response += f"╚═══════════════════════╝"
+            # Asegurar que todos los valores sean strings seguros
+            id_display = str(target_user_id)
+            name_display = safe_full_name[:20] if safe_full_name else f"Usuario {target_user_id}"
+            username_display = safe_username[:25] if safe_username else "Sin username"
+            
+            response_lines = [
+                "╔═══[ USUARIO ACTIVO ]═══╗",
+                f"║ 🧬 {name_display} (ID: {id_display})",
+                f"║ 📡 {username_display}",
+                f"║ 🗓️ Registro: {days_in_server} días atrás",
+                "╠═════[ ESTADO ]═════╣",
+                f"║ 💰 Créditos: {credits:,}",
+                f"║ 🧾 Gen/Verif: {total_generated:,}/{total_checked:,}",
+                f"║ ⚠️ Warns: {warns} | 👑 Premium: {premium_display}",
+                "╠═════[ BONUS INFO ]════╣",
+                f"║ 🎁 Último bono: {last_bonus_date}",
+                f"║ 📊 Actividad total: {total_generated + total_checked:,}",
+                "╚═══════════════════════╝"
+            ]
+            
+            response = "\n".join(response_lines)
 
-            # Verificar que la respuesta no sea demasiado larga
+            # Verificar longitud del mensaje
             if len(response) > 4000:
-                response = response[:4000] + "..."
+                # Versión simplificada si es muy largo
+                response = f"❌ RESPUESTA DEMASIADO LARGA\n\n"
+                response += f"Usuario ID: {target_user_id}\n"
+                response += f"Créditos: {credits:,}\n"
+                response += f"Gen/Ver: {total_generated:,}/{total_checked:,}\n"
+                response += f"Premium: {premium_display}\n"
+                response += f"Registro: {days_in_server} días\n\n"
+                response += f"Datos disponibles, pero formato reducido por tamaño."
 
         except Exception as e:
-            logger.error(f"Error construyendo respuesta: {e}")
-            response = f"❌ ERROR AL CONSTRUIR RESPUESTA\n\n"
+            logger.error(f"Error construyendo respuesta para {target_user_id}: {e}")
+            # Respuesta de emergencia ultra-simple
+            response = f"❌ ERROR DE FORMATO\n\n"
             response += f"Usuario ID: {target_user_id}\n"
+            response += f"Datos disponibles en la BD\n"
+            response += f"Pero hay un error de presentación.\n\n"
             response += f"Créditos: {credits}\n"
-            response += f"Registro: {days_in_server} días\n\n"
-            response += f"Los datos están disponibles pero hay un error de formato."
+            response += f"Premium: {'Sí' if user_data.get('premium', False) else 'No'}"
 
-        # Enviar respuesta sin markdown para evitar errores de parsing
-        await update.message.reply_text(response)
+        # Enviar respuesta de manera ultra-robusta
+        try:
+            await update.message.reply_text(response)
+        except Exception as e:
+            logger.error(f"Error enviando respuesta del comando /id: {e}")
+            # Último intento con mensaje mínimo
+            try:
+                minimal_response = f"Usuario {target_user_id}: {credits} creditos, {days_in_server} dias"
+                await update.message.reply_text(minimal_response)
+            except Exception as final_error:
+                logger.error(f"Error crítico enviando respuesta mínima: {final_error}")
+                # Si llegamos aquí, hay un problema muy serio
+                pass
 
     except Exception as e:
         logger.error(f"Error crítico en comando /id: {e}")
         try:
-            # Mensaje de error muy simple y robusto
+            # Mensaje de error ultra-simple y robusto
             error_response = "❌ ERROR TEMPORAL\n\n"
-            error_response += "Ha ocurrido un error al procesar la información.\n"
-            error_response += "Por favor intenta nuevamente.\n\n"
-            error_response += "Uso correcto:\n"
-            error_response += "• /id - Tu información\n"
-            error_response += "• /id 123456789 - Info de usuario\n"
-            error_response += "• /id (respondiendo a mensaje) - Info del usuario"
+            error_response += "Error procesando información.\n"
+            error_response += "Intenta: /id [numero] o /id"
 
             await update.message.reply_text(error_response)
         except Exception as critical_error:
-            # Si ni siquiera puede enviar el mensaje de error
             logger.error(f"Error crítico absoluto en /id: {critical_error}")
-            try:
-                # Último intento con mensaje ultra-simple
-                await update.message.reply_text("❌ Error. Intenta: /id [numero]")
-            except:
-                # Si esto falla, no hay nada más que hacer
-                logger.error("No se pudo enviar ningún mensaje de error para comando /id")
+            # Si llegamos aquí, registrar en logs pero no podemos hacer más
+            pass
 
 
 @admin_only
