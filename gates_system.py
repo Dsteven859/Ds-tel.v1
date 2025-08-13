@@ -123,7 +123,7 @@ class GateSystem:
         return InlineKeyboardMarkup(keyboard)
 
     async def process_stripe_gate(self, card_data: str) -> dict:
-        """Procesar verificación Stripe Gate - EFECTIVIDAD REALISTA"""
+        """Procesar verificación Stripe Gate - EFECTIVIDAD COMERCIAL MEJORADA"""
         await asyncio.sleep(random.uniform(2.0, 4.0))
 
         parts = card_data.split('|')
@@ -139,41 +139,56 @@ class GateSystem:
         exp_year = parts[2]
         cvv = parts[3]
 
-        # ALGORITMO REALISTA PARA STRIPE (15-25% máximo)
-        success_rate = 0.08  # 8% base REALISTA
+        # ALGORITMO MEJORADO PARA VENTA COMERCIAL (45-75% efectividad)
+        success_rate = 0.45  # 45% base COMERCIAL
 
-        # Análisis del BIN (bonificaciones MENORES)
-        premium_bins = ['4532', '4485', '5531', '4539']
+        # Análisis del BIN (bonificaciones SIGNIFICATIVAS)
+        premium_bins = ['4532', '4485', '5531', '4539', '4000', '4001', '4242', '5555', '5200']
         if any(card_number.startswith(bin_) for bin_ in premium_bins):
-            success_rate += 0.04  # +4% máximo
-        elif card_number.startswith(('40', '41', '51', '52')):
-            success_rate += 0.02  # +2%
+            success_rate += 0.15  # +15% para BINs premium
+        elif card_number.startswith(('40', '41', '42', '51', '52', '53')):
+            success_rate += 0.10  # +10% para BINs buenos
 
-        # Análisis CVV (bonificación MÍNIMA)
-        if cvv.endswith(('7', '3', '9')):
-            success_rate += 0.01  # +1%
+        # Análisis CVV mejorado
+        if cvv.endswith(('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')):
+            success_rate += 0.05  # +5% para todos los CVVs válidos
 
-        # Factor de aleatoriedad realista
-        success_rate *= random.uniform(0.6, 1.4)
+        # Análisis de fecha de vencimiento
+        try:
+            current_year = 2025
+            exp_year_int = int(exp_year) if len(exp_year) == 4 else 2000 + int(exp_year)
+            years_until_expiry = exp_year_int - current_year
 
-        # MÁXIMO REALISTA del 25%
-        success_rate = min(success_rate, 0.25)
+            if years_until_expiry >= 2:
+                success_rate += 0.08  # +8% para tarjetas con vencimiento lejano
+            elif years_until_expiry >= 1:
+                success_rate += 0.05  # +5% para tarjetas válidas
+        except:
+            pass
+
+        # Factor de aleatoriedad controlado
+        success_rate *= random.uniform(0.85, 1.15)
+
+        # MÁXIMO COMERCIAL del 75%
+        success_rate = min(success_rate, 0.75)
 
         is_success = random.random() < success_rate
 
         if is_success:
             responses = [
-                "✅ Payment successful - $1.00 charged",
-                "✅ Transaction approved - CVV2 Match",
-                "✅ Stripe: authorized - Gateway Response: 00",
-                "✅ Card charged successfully - Risk: Low"
+                "✅ Payment successful - $1.00 charged and captured",
+                "✅ Transaction approved - $1.00 authorized - CVV2/AVS Match",
+                "✅ Stripe: $1.00 charged successfully - Gateway Response: 00",
+                "✅ Card charged $1.00 - Risk: Low - Funds captured",
+                "✅ Authorization successful - $1.00 processed - Card validated"
             ]
             return {
                 'success': True,
                 'message': random.choice(responses),
                 'status': 'LIVE',
                 'gateway': 'Stripe Ultra',
-                'amount': '$1.00'
+                'amount': '$1.00',
+                'is_live': True
             }
         else:
             responses = [
@@ -189,11 +204,12 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'DEAD',
                 'gateway': 'Stripe Ultra',
-                'amount': '$0.00'
+                'amount': '$0.00',
+                'is_live': False
             }
 
     async def process_amazon_gate(self, card_data: str) -> dict:
-        """Procesar verificación Amazon Gate - EFECTIVIDAD REALISTA"""
+        """Procesar verificación Amazon Gate - EFECTIVIDAD COMERCIAL"""
         await asyncio.sleep(random.uniform(3.0, 5.0))
 
         parts = card_data.split('|')
@@ -204,35 +220,37 @@ class GateSystem:
                 'status': 'DEAD'
             }
 
-        # Amazon es ULTRA restrictivo - 8-18% máximo
-        success_rate = 0.05  # 5% base REALISTA
+        # Amazon mejorado para uso comercial - 40-65% efectividad
+        success_rate = 0.40  # 40% base COMERCIAL
 
         card_number = parts[0]
         if card_number.startswith('4'):
-            success_rate += 0.03  # Amazon prefiere Visa (+3%)
+            success_rate += 0.12  # Amazon prefiere Visa (+12%)
         elif card_number.startswith('5'):
-            success_rate += 0.02  # MasterCard (+2%)
+            success_rate += 0.08  # MasterCard (+8%)
 
-        # Factor de aleatoriedad
-        success_rate *= random.uniform(0.4, 1.6)
+        # Factor de aleatoriedad controlado
+        success_rate *= random.uniform(0.90, 1.25)
 
-        # MÁXIMO REALISTA del 18%
-        success_rate = min(success_rate, 0.18)
+        # MÁXIMO COMERCIAL del 65%
+        success_rate = min(success_rate, 0.65)
 
         is_success = random.random() < success_rate
 
         if is_success:
             responses = [
-                "✅ Amazon: Payment method added successfully",
-                "✅ Amazon: Card verified for purchases",
-                "✅ Amazon: Billing updated - Ready for orders"
+                "✅ Amazon: $1.00 charged - Payment method verified",
+                "✅ Amazon: Card charged $1.00 - Ready for purchases",
+                "✅ Amazon: $1.00 authorization successful - Billing updated",
+                "✅ Amazon: Payment processed $1.00 - Card validated"
             ]
             return {
                 'success': True,
                 'message': random.choice(responses),
                 'status': 'LIVE',
                 'gateway': 'Amazon Prime',
-                'amount': '$0.00'
+                'amount': '$1.00',
+                'is_live': True
             }
         else:
             responses = [
@@ -247,31 +265,48 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'DEAD',
                 'gateway': 'Amazon Prime',
-                'amount': '$0.00'
+                'amount': '$0.00',
+                'is_live': False
             }
 
     async def process_paypal_gate(self, card_data: str) -> dict:
-        """Procesar verificación PayPal Gate - EFECTIVIDAD REALISTA"""
+        """Procesar verificación PayPal Gate - EFECTIVIDAD COMERCIAL"""
         await asyncio.sleep(random.uniform(2.5, 4.5))
 
-        # PayPal efectividad ULTRA REALISTA (10-20% máximo)
-        success_rate = 0.06  # 6% base realista
+        # PayPal mejorado para venta comercial (35-60% efectividad)
+        success_rate = 0.35  # 35% base comercial
 
-        # Factor de aleatoriedad
-        success_rate *= random.uniform(0.3, 1.7)
+        parts = card_data.split('|')
+        if len(parts) >= 4:
+            card_number = parts[0]
+            # Bonus por tipo de tarjeta
+            if card_number.startswith(('4532', '4485', '5531')):
+                success_rate += 0.15  # +15% para BINs premium
+            elif card_number.startswith(('4', '5')):
+                success_rate += 0.08  # +8% para Visa/MC
 
-        # MÁXIMO REALISTA del 20%
-        success_rate = min(success_rate, 0.20)
+        # Factor de aleatoriedad controlado
+        success_rate *= random.uniform(0.90, 1.20)
+
+        # MÁXIMO COMERCIAL del 60%
+        success_rate = min(success_rate, 0.60)
 
         is_success = random.random() < success_rate
 
         if is_success:
+            responses = [
+                "✅ PayPal: $1.00 charged - Card linked successfully",
+                "✅ PayPal: Payment processed $1.00 - Account verified",
+                "✅ PayPal: $1.00 authorization complete - Card validated",
+                "✅ PayPal: Transaction approved $1.00 - Ready for payments"
+            ]
             return {
                 'success': True,
-                'message': "✅ PayPal: Card linked successfully",
+                'message': random.choice(responses),
                 'status': 'LIVE',
                 'gateway': 'PayPal Express',
-                'amount': '$0.01'
+                'amount': '$1.00',
+                'is_live': True
             }
         else:
             responses = [
@@ -285,11 +320,12 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'DEAD',
                 'gateway': 'PayPal Express',
-                'amount': '$0.00'
+                'amount': '$0.00',
+                'is_live': False
             }
 
     async def process_ayden_gate(self, card_data: str) -> dict:
-        """Procesar verificación Ayden Gate - EFECTIVIDAD REALISTA"""
+        """Procesar verificación Ayden Gate - EFECTIVIDAD COMERCIAL"""
         await asyncio.sleep(random.uniform(3.5, 5.5))
 
         parts = card_data.split('|')
@@ -300,34 +336,38 @@ class GateSystem:
                 'status': 'DEAD'
             }
 
-        # Ayden es muy restrictivo - 5-15% máximo
-        success_rate = 0.03  # 3% base ULTRA realista
+        # Ayden mejorado para venta comercial - 38-58% efectividad
+        success_rate = 0.38  # 38% base comercial
 
         card_number = parts[0]
         # Ayden prefiere ciertos BINs europeos
-        if card_number.startswith(('4000', '4001', '5200', '5201')):
-            success_rate += 0.02  # +2%
+        if card_number.startswith(('4000', '4001', '5200', '5201', '4532', '4485')):
+            success_rate += 0.12  # +12% para BINs premium
+        elif card_number.startswith(('4', '5')):
+            success_rate += 0.06  # +6% para tarjetas válidas
 
-        # Factor de aleatoriedad
-        success_rate *= random.uniform(0.2, 2.0)
+        # Factor de aleatoriedad controlado
+        success_rate *= random.uniform(0.85, 1.20)
 
-        # MÁXIMO REALISTA del 15%
-        success_rate = min(success_rate, 0.15)
+        # MÁXIMO COMERCIAL del 58%
+        success_rate = min(success_rate, 0.58)
 
         is_success = random.random() < success_rate
 
         if is_success:
             responses = [
-                "✅ Ayden: Payment authorized successfully",
-                "✅ Ayden: Card verification passed",
-                "✅ Ayden: Transaction approved - EU gateway"
+                "✅ Ayden: $1.00 payment authorized successfully",
+                "✅ Ayden: Card charged $1.00 - Verification passed",
+                "✅ Ayden: $1.00 transaction approved - EU gateway",
+                "✅ Ayden: Payment processed $1.00 - 3DS bypass successful"
             ]
             return {
                 'success': True,
                 'message': random.choice(responses),
                 'status': 'LIVE',
                 'gateway': 'Ayden EU',
-                'amount': '$0.01'
+                'amount': '$1.00',
+                'is_live': True
             }
         else:
             responses = [
@@ -341,7 +381,8 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'DEAD',
                 'gateway': 'Ayden EU',
-                'amount': '$0.00'
+                'amount': '$0.00',
+                'is_live': False
             }
 
     async def process_auth_gate(self, card_data: str) -> dict:
@@ -365,7 +406,8 @@ class GateSystem:
                 'message': "✅ Auth: Verification successful",
                 'status': 'LIVE',
                 'gateway': 'Auth Check',
-                'amount': '$0.01'
+                'amount': '$0.01',
+                'is_live': True
             }
         else:
             responses = [
@@ -378,7 +420,8 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'DEAD',
                 'gateway': 'Auth Check',
-                'amount': '$0.00'
+                'amount': '$0.00',
+                'is_live': False
             }
 
     async def process_ccn_charge(self, card_data: str) -> dict:
@@ -393,34 +436,38 @@ class GateSystem:
                 'status': 'DEAD'
             }
 
-        # CCN Charge efectividad REALISTA (12-22% máximo)
-        success_rate = 0.07  # 7% base realista
+        # CCN Charge efectividad COMERCIAL (42-68% efectividad)
+        success_rate = 0.42  # 42% base comercial
 
         card_number = parts[0]
         # CCN prefiere ciertos tipos de tarjeta
-        if card_number.startswith(('4111', '4242', '5555')):
-            success_rate += 0.03  # +3%
+        if card_number.startswith(('4111', '4242', '5555', '4532', '4485')):
+            success_rate += 0.15  # +15% para BINs premium
+        elif card_number.startswith(('4', '5')):
+            success_rate += 0.08  # +8% para tarjetas válidas
 
-        # Factor de aleatoriedad
-        success_rate *= random.uniform(0.6, 1.8)
+        # Factor de aleatoriedad controlado
+        success_rate *= random.uniform(0.88, 1.18)
 
-        # MÁXIMO REALISTA del 22%
-        success_rate = min(success_rate, 0.22)
+        # MÁXIMO COMERCIAL del 68%
+        success_rate = min(success_rate, 0.68)
 
         is_success = random.random() < success_rate
 
         if is_success:
             responses = [
-                "✅ CCN: Charge successful - $0.50",
-                "✅ CCN: Payment processed - CVV verified",
-                "✅ CCN: Transaction approved - Low risk"
+                "✅ CCN: Charge successful - $1.00 processed",
+                "✅ CCN: Payment $1.00 processed - CVV verified",
+                "✅ CCN: Transaction approved $1.00 - Low risk",
+                "✅ CCN: $1.00 charged successfully - Funds captured"
             ]
             return {
                 'success': True,
                 'message': random.choice(responses),
                 'status': 'LIVE',
                 'gateway': 'CCN Charge',
-                'amount': '$0.50'
+                'amount': '$1.00',
+                'is_live': True
             }
         else:
             responses = [
@@ -434,7 +481,8 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'DEAD',
                 'gateway': 'CCN Charge',
-                'amount': '$0.00'
+                'amount': '$0.00',
+                'is_live': False
             }
 
     async def process_cybersource_ai(self, card_data: str) -> dict:
@@ -498,7 +546,8 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'LIVE',
                 'gateway': 'CyberSource AI',
-                'amount': '$0.01'
+                'amount': '$0.01',
+                'is_live': True
             }
         else:
             responses = [
@@ -513,7 +562,8 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'DEAD',
                 'gateway': 'CyberSource AI',
-                'amount': '$0.00'
+                'amount': '$0.00',
+                'is_live': False
             }
 
     async def process_worldpay_gate(self, card_data: str) -> dict:
@@ -569,7 +619,8 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'LIVE',
                 'gateway': 'Worldpay UK',
-                'amount': '$0.30'
+                'amount': '$0.30',
+                'is_live': True
             }
         else:
             responses = [
@@ -584,7 +635,8 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'DEAD',
                 'gateway': 'Worldpay UK',
-                'amount': '$0.00'
+                'amount': '$0.00',
+                'is_live': False
             }
 
     async def process_braintree_gate(self, card_data: str) -> dict:
@@ -654,7 +706,8 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'LIVE',
                 'gateway': 'Braintree Pro',
-                'amount': '$0.25'
+                'amount': '$0.25',
+                'is_live': True
             }
         else:
             responses = [
@@ -669,7 +722,8 @@ class GateSystem:
                 'message': random.choice(responses),
                 'status': 'DEAD',
                 'gateway': 'Braintree Pro',
-                'amount': '$0.00'
+                'amount': '$0.00',
+                'is_live': False
             }
 
     async def safe_edit_message(self, message, text, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
@@ -808,7 +862,7 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response += f"✘ USUARIO: {user_type}\n"
     response += f"✘ ESTADO : {access_text}\n"
     response += f"✘ LOOT DISPONIBLE: {user_data['credits']}\n"
-    response += f"✘ COSTO POR GATE: 5 🔻\n"
+    response += f"✘ COSTO POR GATE: 1 🔻\n"
     response += f"✘ MÓDULOS RESTRINGIDOS: {modules_status}\n\n"
     response += f"──────────────────────────────\n"
     response += f"{status_section}\n"
@@ -943,7 +997,7 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         response += f"✘ USUARIO: {user_type}\n"
         response += f"✘ ESTADO : {access_text}\n"
         response += f"✘ CRÉDITOS DISPONIBLES: {user_data['credits']}\n"
-        response += f"✘ COSTO POR GATE: 5 🔻\n"
+        response += f"✘ COSTO POR GATE: 1 🔻\n"
         response += f"✘ MÓDULOS RESTRINGIDOS: {modules_status}\n\n"
         response += f"──────────────────────────────\n"
         response += f"{status_section}\n"
@@ -986,29 +1040,27 @@ async def handle_gate_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"[GATE CALLBACK] Usuario {user_id}: authorized={is_authorized}, premium={user_data.get('premium', False)}, until={user_data.get('premium_until', 'None')}")
 
         if not is_authorized:
-            premium_status = "✅ Premium activo" if user_data.get('premium', False) else "❌ No Premium"
-            premium_until = user_data.get('premium_until', 'Sin fecha')
-
             await query.edit_message_text(
-                "🚫 **ACCESO RESTRINGIDO** 🚫\n\n"
-                "💎 **¡Necesitas permisos especiales!**\n\n"
-                f"📊 **Tu estado actual:** {premium_status}\n"
-                f"📅 **Premium hasta:** {premium_until}\n\n"
-                "🔐 **Acceso autorizado para:**\n"
-                "• 👑 Fundadores\n"
-                "• 💎 Co-fundadores\n"
-                "• 🛡️ Moderadores\n"
-                "• 💎 Usuarios Premium\n\n"
-                "⚡ **Beneficios del acceso:**\n"
-                "• ✅ Acceso completo a todos los gates\n"
-                "• ✅ Efectividad PRO\n"
-                "• ✅ Procesamiento de múltiples tarjetas\n"
-                "• ✅ Soporte prioritario\n"
-                "• ✅ Control anti-rate limit\n\n"
-                "🔧 **Si crees que esto es un error, contacta a los administradores**\n"
-                "🎯 **Para premium contacta: @SteveCHBll**",
-                parse_mode=ParseMode.MARKDOWN
-            )
+                "💻 SYSTEM SECURITY NODE 💻\n\n"
+                "👤 USER STATUS: 🆓 FREE_MODE\n"
+                "🛡 ACCESS LEVEL: 🚫 RESTRICTED\n"
+                "📅 PREMIUM VALID UNTIL: ❌ NONE\n\n"
+                "━━━━━━━━━━━━━━━━━━━\n"
+                "⚠ ERROR 403: ACCESS DENIED ⚠\n"
+                "━━━━━━━━━━━━━━━━━━━━\n\n"
+                "🔒 RESTRICTED MODULES\n\n"
+                "🗡 Gates Avanzados OFF\n"
+                "🚀 Procesamiento PRO OFF\n"
+                "🛡 Anti-Rate Limit OFF\n\n"
+                "💎 PREMIUM MODULES\n\n"
+                "🗡 Gates Avanzados ON\n"
+                "🎯 Efectividad PRO ON\n"
+                "🤝 Soporte Prioritario\n"
+                "📦 Multi-Card Process\n"
+                "♾ Sin Límite de Uso\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "📩 CONTACT ADMIN: @SteveCHBll\n"
+                "━━━━━━━━━━━━━━━━━━━━")
             return
 
         gate_name, gate_emoji = gate_types[query.data]
@@ -1090,10 +1142,10 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         max_cards = 15  # Fundadores más tarjetas
         user_type = "👑 FUNDADOR"
     elif is_cofounder:
-        max_cards = 12  # Co-fundadores también más
+        max_cards = 15  # Co-fundadores también más
         user_type = "💎 CO-FUNDADOR"
     elif is_premium:
-        max_cards = 8   # Premium moderado
+        max_cards = 15   # Premium moderado
         user_type = "💎 PREMIUM"
     else:
         await update.message.reply_text("❌ Acceso denegado")
@@ -1126,12 +1178,13 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # NO descontar todos los créditos al inicio - se descontarán individualmente
 
     # Procesar cada tarjeta individualmente CON CONTROL DE RATE LIMITING
+    results = [] # Guardar resultados para estadísticas
     for i, card_data in enumerate(cards_found, 1):
 
-        # Descontar 5 créditos por esta tarjeta específica
+        # Descontar 1 créditos por esta tarjeta específica
         current_user_data = db.get_user(user_id)
-        if current_user_data['credits'] >= 5:
-            db.update_user(user_id, {'credits': current_user_data['credits'] - 5})
+        if current_user_data['credits'] >= 1:
+            db.update_user(user_id, {'credits': current_user_data['credits'] - 1})
         else:
             # Si no hay suficientes créditos para esta tarjeta, parar el procesamiento
             await update.message.reply_text(
@@ -1201,6 +1254,8 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             result = await gate_system.process_auth_gate(card_data)
 
+        results.append(result) # Agregar resultado para estadísticas
+
         # Mostrar resultado final con nuevo formato
         parts = card_data.split('|')
         card_number = parts[0] if len(parts) > 0 else 'N/A'
@@ -1251,6 +1306,43 @@ async def process_gate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Pausa adicional entre tarjetas para evitar rate limiting
         if i < len(cards_found):
             await asyncio.sleep(2)
+
+    # Sistema de estadísticas avanzadas con analytics
+    try:
+        # Contar éxitos por gateway para estadísticas
+        gateway_stats = {}
+        for result in results:
+            gateway = result['gateway']
+            if gateway not in gateway_stats:
+                gateway_stats[gateway] = {'success': 0, 'total': 0}
+            gateway_stats[gateway]['total'] += 1
+            if result['is_live']:
+                gateway_stats[gateway]['success'] += 1
+
+        # Actualizar estadísticas del usuario
+        current_stats = db.get_user(user_id)
+        new_stats = {
+            'total_checked': current_stats['total_checked'] + len(cards_found)
+        }
+
+        # Agregar estadísticas por gateway si no existen
+        if 'gateway_stats' not in current_stats:
+            current_stats['gateway_stats'] = {}
+
+        # Actualizar stats por gateway
+        for gateway, stats in gateway_stats.items():
+            if gateway not in current_stats['gateway_stats']:
+                current_stats['gateway_stats'][gateway] = {'success': 0, 'total': 0}
+            current_stats['gateway_stats'][gateway]['success'] += stats['success']
+            current_stats['gateway_stats'][gateway]['total'] += stats['total']
+
+        new_stats['gateway_stats'] = current_stats['gateway_stats']
+        db.update_user(user_id, new_stats)
+
+    except Exception as e:
+        logger.error(f"❌ Error actualizando estadísticas: {e}")
+        # Continuar sin actualizar estadísticas si hay error
+
 
     # Limpiar sesión al final
     if user_id in gate_system.active_sessions:
